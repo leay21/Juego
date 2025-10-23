@@ -18,23 +18,25 @@ class ReflexViewModel : ViewModel() {
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
     private var gameJob: Job? = null
-    private val metaPuntuacion = 5 // Objetivo para ganar
-    private val roundTimeoutMs = 2500L // 2.5 segundos
+    private val metaPuntuacion = 5
+    private val roundTimeoutMs = 2500L
+
+    // ¡NUEVO! Pequeño delay para asegurar que el estado PROCESANDO
+    // sea visto por ambos toques simultáneos.
+    private val processingDelayMs = 100L
 
     init {
         resetGame()
     }
 
-    // Función para reiniciar el juego
     fun resetGame() {
         gameJob?.cancel()
         _uiState.value = GameUiState()
         startRound()
     }
 
-    // Inicia una nueva ronda
     private fun startRound() {
-        gameJob?.cancel() // Cancela cualquier ronda anterior
+        gameJob?.cancel()
         gameJob = viewModelScope.launch {
             // 1. Estado ESPERA
             _uiState.update {
@@ -45,28 +47,32 @@ class ReflexViewModel : ViewModel() {
                 )
             }
 
-            // 2. Delay aleatorio (2-5 segundos)
+            // 2. Delay aleatorio
             delay(Random.nextLong(2000, 5001))
 
             // 3. Estado GO
             _uiState.update {
-                it.copy(
-                    gameState = GamePhase.GO,
-                    roundColor = generateRoundColor()
-                )
+                // Solo cambiar a GO si todavía estamos en ESPERA
+                // (una Falsa Alarma podría haber cancelado esta ronda)
+                if (it.gameState == GamePhase.ESPERA) {
+                    it.copy(gameState = GamePhase.GO, roundColor = generateRoundColor())
+                } else {
+                    it
+                }
             }
 
-            // 4. Iniciar temporizador de "timeout" para la ronda
+            // 4. Iniciar temporizador de "timeout"
             delay(roundTimeoutMs)
 
-            // 5. Verificar si nadie ha tocado
+            // 5. ¡MODIFICADO! Lógica de timeout simplificada.
+            // Si llegamos aquí, el job no fue cancelado por processTouch.
+            // Verificamos si el estado sigue siendo GO y reiniciamos.
             if (_uiState.value.gameState == GamePhase.GO) {
                 startRound()
             }
         }
     }
 
-    // Genera el color de la ronda
     private fun generateRoundColor(): GameColor {
         val currentTarget = _uiState.value.targetColor
         if (Random.nextBoolean()) {
@@ -80,80 +86,75 @@ class ReflexViewModel : ViewModel() {
         }
     }
 
-    // Núcleo de validación, llamado desde la UI
     fun processTouch(player: Int) {
-        if (_uiState.value.gameState != GamePhase.GO && _uiState.value.gameState != GamePhase.ESPERA) {
-            return
+
+        var shouldStartNextRound = false
+
+        _uiState.update { currentState ->
+
+            when (currentState.gameState) {
+
+                GamePhase.ESPERA -> {
+                    gameJob?.cancel()
+                    shouldStartNextRound = true
+
+                    val newScoreJ1 = if (player == 1) (currentState.scoreJ1 - 1).coerceAtLeast(0) else currentState.scoreJ1
+                    val newScoreJ2 = if (player == 2) (currentState.scoreJ2 - 1).coerceAtLeast(0) else currentState.scoreJ2
+
+                    currentState.copy(
+                        scoreJ1 = newScoreJ1,
+                        scoreJ2 = newScoreJ2,
+                        gameState = GamePhase.PROCESANDO // ¡Bloquear!
+                    )
+                }
+
+                GamePhase.GO -> {
+                    gameJob?.cancel()
+
+                    val isCorrect = currentState.roundColor == currentState.targetColor
+                    var newScoreJ1 = currentState.scoreJ1
+                    var newScoreJ2 = currentState.scoreJ2
+
+                    if (isCorrect) {
+                        if (player == 1) newScoreJ1++ else newScoreJ2++
+                    } else {
+                        if (player == 1) newScoreJ2++ else newScoreJ1++
+                    }
+
+                    if (newScoreJ1 >= metaPuntuacion || newScoreJ2 >= metaPuntuacion) {
+                        val winner = if (newScoreJ1 > newScoreJ2) "Jugador 1" else "Jugador 2"
+                        currentState.copy(
+                            scoreJ1 = newScoreJ1,
+                            scoreJ2 = newScoreJ2,
+                            gameState = GamePhase.GAME_OVER,
+                            winnerMessage = "¡GANA $winner!"
+                        )
+                    } else {
+                        shouldStartNextRound = true
+                        currentState.copy(
+                            scoreJ1 = newScoreJ1,
+                            scoreJ2 = newScoreJ2,
+                            gameState = GamePhase.PROCESANDO // ¡Bloquear!
+                        )
+                    }
+                }
+
+                // Si el estado es PROCESANDO o GAME_OVER, ignorar este toque
+                GamePhase.PROCESANDO, GamePhase.GAME_OVER -> {
+                    currentState // No hacer nada
+                }
+            }
         }
 
-        when (_uiState.value.gameState) {
-            // Falsa Alarma
-            GamePhase.ESPERA -> {
-                // ¡MODIFICADO! Llama a la función con el nombre nuevo
-                applyFalsaAlarmaPenalty(player)
+        // ¡MODIFICADO!
+        if (shouldStartNextRound) {
+            // Iniciar la siguiente ronda después de una breve pausa
+            // para permitir que los toques simultáneos (T2)
+            // sean ignorados por el estado PROCESANDO.
+            viewModelScope.launch {
+                delay(processingDelayMs) // Espera 100ms
                 startRound()
             }
-            // Toque durante GO
-            GamePhase.GO -> {
-                val state = _uiState.value
-                val isCorrect = state.roundColor == state.targetColor
-
-                if (isCorrect) {
-                    // Toque Válido
-                    applyScore(player, 1) //
-                } else {
-                    // ¡MODIFICADO! Fallo por Color
-                    // Se da +1 punto al oponente
-                    val opponent = if (player == 1) 2 else 1
-                    applyScore(opponent, 1)
-                }
-
-                if (!checkWinCondition()) {
-                    startRound()
-                }
-            }
-            GamePhase.GAME_OVER -> { /* No hacer nada */ }
         }
-    }
-
-    private fun applyScore(player: Int, points: Int) {
-        _uiState.update {
-            if (player == 1) {
-                it.copy(scoreJ1 = it.scoreJ1 + points)
-            } else {
-                it.copy(scoreJ2 = it.scoreJ2 + points)
-            }
-        }
-    }
-
-    // ¡MODIFICADO! Renombrada de applyPenalty a applyFalsaAlarmaPenalty
-    private fun applyFalsaAlarmaPenalty(player: Int) {
-        // Aplicar penalización de -1 punto
-        _uiState.update {
-            if (player == 1) {
-                it.copy(scoreJ1 = (it.scoreJ1 - 1).coerceAtLeast(0))
-            } else {
-                it.copy(scoreJ2 = (it.scoreJ2 - 1).coerceAtLeast(0))
-            }
-        }
-    }
-
-    // Detección de Victoria
-    private fun checkWinCondition(): Boolean {
-        val score1 = _uiState.value.scoreJ1
-        val score2 = _uiState.value.scoreJ2
-
-        if (score1 >= metaPuntuacion || score2 >= metaPuntuacion) { //
-            val winner = if (score1 > score2) "Jugador 1" else "Jugador 2"
-            _uiState.update {
-                it.copy(
-                    gameState = GamePhase.GAME_OVER, //
-                    winnerMessage = "¡GANA $winner!" //
-                )
-            }
-            gameJob?.cancel()
-            return true
-        }
-        return false
     }
 }

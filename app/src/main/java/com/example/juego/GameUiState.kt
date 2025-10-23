@@ -7,6 +7,7 @@ import com.example.juego.ui.theme.* // Importa tus colores
 enum class GamePhase {
     ESPERA, // [cite: 6]
     GO,     // [cite: 9]
+    PROCESANDO,
     GAME_OVER // [cite: 18]
 }
 
