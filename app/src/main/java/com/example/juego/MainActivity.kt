@@ -20,9 +20,11 @@ class MainActivity : ComponentActivity() {
     // Creamos la fábrica una vez
     private val viewModelFactory: AppViewModelFactory by lazy {
         val application = (application as ReflexApplication)
+        // ¡MODIFICADO! Pasamos el nuevo repositorio a la fábrica
         AppViewModelFactory(
             application.statsRepository,
-            application.themeRepository
+            application.themeRepository,
+            application.gameSaveRepository // ¡NUEVO!
         )
     }
 
@@ -56,16 +58,20 @@ class MainActivity : ComponentActivity() {
 
                         // Ruta 2: Pantalla del Juego (Game)
                         composable(Screen.Game.route) {
-                            // Pasamos el ViewModel del juego
-                            GameScreen(viewModel = reflexViewModel)
+                            // ¡MODIFICADO! Pasamos ambos ViewModels
+                            GameScreen(
+                                reflexViewModel = reflexViewModel,
+                                settingsViewModel = settingsViewModel
+                            )
                         }
 
                         // Ruta 3: Ajustes
                         composable(Screen.Settings.route) {
-                            // Pasamos el NavController y el ViewModel de ajustes
+                            // ¡MODIFICADO! Pasamos ambos ViewModels
                             SettingsScreen(
                                 navController = navController,
-                                viewModel = settingsViewModel
+                                settingsViewModel = settingsViewModel,
+                                reflexViewModel = reflexViewModel
                             )
                         }
                     }
