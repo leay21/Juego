@@ -1,16 +1,7 @@
 pluginManagement {
     repositories {
-        google {
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
-
-                // --- ¡ESTA ES LA LÍNEA CRÍTICA! ---
-                includeGroup("com.google.devtools")
-                // ---------------------------------
-            }
-        }
+        // Ya no filtramos el contenido de Google
+        google()
         mavenCentral()
         gradlePluginPortal()
     }
