@@ -1,4 +1,4 @@
-package com.example.juego // Reemplaza con tu package name
+package com.example.juego
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,16 +22,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.juego.ui.theme.GrisFondo
+import com.example.juego.data.GameStats
+import androidx.compose.foundation.layout.Row
 
 // Composable principal que organiza la pantalla [cite: 46]
 @Composable
 fun GameScreen(viewModel: ReflexViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val stats by viewModel.stats.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -40,7 +41,7 @@ fun GameScreen(viewModel: ReflexViewModel) {
             .background(GrisFondo), // [cite: 46]
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-
+        StatsDisplay(stats = stats)
         // Área de Toque Jugador 1 [cite: 46]
         TouchArea(
             player = 1,
@@ -73,7 +74,31 @@ fun GameScreen(viewModel: ReflexViewModel) {
         )
     }
 }
-
+@Composable
+fun StatsDisplay(stats: GameStats) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp, horizontal = 16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = "Partidas: ${stats.gamesPlayed}",
+            color = Color.White,
+            fontSize = 14.sp
+        )
+        Text(
+            text = "J1: ${stats.player1Wins}",
+            color = Color.White,
+            fontSize = 14.sp
+        )
+        Text(
+            text = "J2: ${stats.player2Wins}",
+            color = Color.White,
+            fontSize = 14.sp
+        )
+    }
+}
 @Composable
 fun TouchArea(
     player: Int,

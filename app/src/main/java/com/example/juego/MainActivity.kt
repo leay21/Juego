@@ -1,4 +1,4 @@
-package com.example.juego // Reemplaza con tu package name
+package com.example.juego
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.example.juego.ui.theme.JuegoTheme // Reemplaza con el nombre de tu tema
+import com.example.juego.ui.theme.JuegoTheme
 
 class MainActivity : ComponentActivity() {
 
-    // Inicializa el ViewModel
-    private val viewModel: ReflexViewModel by viewModels()
+    private val viewModel: ReflexViewModel by viewModels {
+        ReflexViewModelFactory(
+            (application as ReflexApplication).statsRepository
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,7 +26,6 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // Muestra la UI leyendo el estado del ViewModel
                     GameScreen(viewModel = viewModel)
                 }
             }
