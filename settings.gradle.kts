@@ -1,6 +1,7 @@
 pluginManagement {
     repositories {
-        // Ya no filtramos el contenido de Google
+        // Ya no filtramos el contenido de Google.
+        // Esto permite que KSP (y KAPT) se descarguen.
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -16,4 +17,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "Juego"
 include(":app")
- 
