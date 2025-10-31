@@ -5,7 +5,10 @@ pluginManagement {
                 includeGroupByRegex("com\\.android.*")
                 includeGroupByRegex("com\\.google.*")
                 includeGroupByRegex("androidx.*")
+
+                // --- ¡ESTA ES LA LÍNEA CRÍTICA! ---
                 includeGroup("com.google.devtools")
+                // ---------------------------------
             }
         }
         mavenCentral()
