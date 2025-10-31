@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -40,13 +41,19 @@ fun HomeScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            Button(onClick = { navController.navigate(Screen.Game.route) }) {
+            Button(
+                onClick = { navController.navigate(Screen.Game.route) },
+                modifier = Modifier.size(width = 200.dp, height = 50.dp)
+            ) {
                 Text("Jugar", fontSize = 18.sp)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Button(onClick = { /* Próximamente: navController.navigate(Screen.Settings.route) */ }) {
+            Button(
+                onClick = { navController.navigate(Screen.Settings.route) },
+                modifier = Modifier.size(width = 200.dp, height = 50.dp)
+            ) {
                 Text("Ajustes", fontSize = 18.sp)
             }
         }
