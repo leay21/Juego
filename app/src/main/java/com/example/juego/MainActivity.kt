@@ -1,4 +1,4 @@
-package com.example.juego // Reemplaza con tu package name
+package com.example.juego
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -7,24 +7,74 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import com.example.juego.ui.theme.JuegoTheme // Reemplaza con el nombre de tu tema
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.example.juego.ui.theme.JuegoTheme
 
 class MainActivity : ComponentActivity() {
 
-    // Inicializa el ViewModel
-    private val viewModel: ReflexViewModel by viewModels()
+    // Creamos la fábrica una vez
+    private val viewModelFactory: AppViewModelFactory by lazy {
+        val application = (application as ReflexApplication)
+        // ¡MODIFICADO! Pasamos el nuevo repositorio a la fábrica
+        AppViewModelFactory(
+            application.statsRepository,
+            application.themeRepository,
+            application.gameSaveRepository // ¡NUEVO!
+        )
+    }
+
+    // Pedimos los ViewModels usando la fábrica
+    private val reflexViewModel: ReflexViewModel by viewModels { viewModelFactory }
+    private val settingsViewModel: SettingsViewModel by viewModels { viewModelFactory }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            JuegoTheme {
+            // Leemos el tema desde el SettingsViewModel
+            val appTheme by settingsViewModel.appTheme.collectAsState()
+
+            // El tema ahora es dinámico y envuelve toda la app
+            JuegoTheme(appTheme = appTheme) {
+
+                val navController = rememberNavController()
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    // Muestra la UI leyendo el estado del ViewModel
-                    GameScreen(viewModel = viewModel)
+                    NavHost(
+                        navController = navController,
+                        startDestination = Screen.Home.route // Empezamos en el Menú
+                    ) {
+                        // Ruta 1: Pantalla Principal (Home)
+                        composable(Screen.Home.route) {
+                            HomeScreen(navController = navController)
+                        }
+
+                        // Ruta 2: Pantalla del Juego (Game)
+                        composable(Screen.Game.route) {
+                            // ¡MODIFICADO! Pasamos ambos ViewModels
+                            GameScreen(
+                                reflexViewModel = reflexViewModel,
+                                settingsViewModel = settingsViewModel
+                            )
+                        }
+
+                        // Ruta 3: Ajustes
+                        composable(Screen.Settings.route) {
+                            // ¡MODIFICADO! Pasamos ambos ViewModels
+                            SettingsScreen(
+                                navController = navController,
+                                settingsViewModel = settingsViewModel,
+                                reflexViewModel = reflexViewModel
+                            )
+                        }
+                    }
                 }
             }
         }

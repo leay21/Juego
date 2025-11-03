@@ -43,23 +43,31 @@ android {
 dependencies {
 
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx) // <-- Usa el alias
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    // Para el ViewModel en Compose
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
-    // Para recolectar el StateFlow de forma segura
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
+
+    // ¡CAMBIADO! Usando el nuevo alias
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+    // ¡ELIMINADO! Esta línea estaba duplicada y hardcodeada
+    // implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
+
     // Para AnimatedContent y animateColorAsState
     implementation("androidx.compose.animation:animation:1.7.0-beta01")
-    // ¡NUEVAS DEPENDENCIAS DE ROOM!
+
+    // ¡DEPENDENCIAS DE ROOM!
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     kapt(libs.androidx.room.compiler)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.datastore.preferences)
+
+    implementation("com.google.code.gson:gson:2.10.1")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
