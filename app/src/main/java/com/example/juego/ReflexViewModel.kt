@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.juego.data.GameSaveRepository
 import com.example.juego.data.GameStats
 import com.example.juego.data.SaveFormat
+import com.example.juego.data.SoundManager // ¡NUEVO IMPORT!
 import com.example.juego.data.StatsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -18,12 +19,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
+// ¡MODIFICADO! Añadido soundManager al constructor
 class ReflexViewModel(
     private val statsRepository: StatsRepository,
-    private val gameSaveRepository: GameSaveRepository
+    private val gameSaveRepository: GameSaveRepository,
+    private val soundManager: SoundManager // ¡NUEVO!
 ) : ViewModel() {
 
-    // ¡CORREGIDO! Usamos el constructor por defecto
     private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
@@ -38,19 +40,23 @@ class ReflexViewModel(
     private val metaPuntuacion = 5
     private val roundTimeoutMs = 2500L
     private val processingDelayMs = 100L
-    private val timeAttackDuration = 60 // ¡CORREGIDO! Valor añadido
+    private val timeAttackDuration = 60
 
-    // ¡CORREGIDO! El init ahora inicia el modo clásico por defecto
     init {
         startGame(GameMode.CLASSIC)
     }
 
-    // ¡NUEVO! Función pública para iniciar el juego desde la UI
+    // --- ¡NUEVO! Limpiar el SoundPool cuando el ViewModel se destruya ---
+    override fun onCleared() {
+        super.onCleared()
+        soundManager.release()
+    }
+    // ------------------------------------------------------------------
+
     fun startGame(mode: GameMode) {
         gameJob?.cancel()
         timerJob?.cancel()
 
-        // Reseteamos el estado con el modo de juego seleccionado
         _uiState.value = GameUiState(
             gameMode = mode,
             remainingTime = timeAttackDuration
@@ -59,15 +65,12 @@ class ReflexViewModel(
         startRound()
     }
 
-    // ¡CORREGIDO! Eliminada la función 'startGame()' duplicada y sin parámetros
-
     private fun startTimer() {
         timerJob?.cancel()
         timerJob = viewModelScope.launch {
             while (true) {
                 delay(1000L) // Cada segundo
 
-                // Lógica del timer depende del modo de juego
                 val currentMode = _uiState.value.gameMode
                 if (currentMode == GameMode.TIME_ATTACK) {
                     var newTime = 0
@@ -77,8 +80,6 @@ class ReflexViewModel(
                     }
 
                     if (newTime <= 0) {
-                        // Si el tiempo se acaba, finaliza el juego
-                        // (Se llama fuera del update)
                         endGameTimeAttack()
                     }
                 } else { // CLASSIC y CONFUSION
@@ -101,18 +102,17 @@ class ReflexViewModel(
                 val newTargetColor = GameColor.getRandom()
                 var newTargetTextColor: GameColor? = null
 
-                // Lógica para modo Confusión
                 if (currentState.gameMode == GameMode.CONFUSION) {
                     do {
                         newTargetTextColor = GameColor.getRandom()
-                    } while (newTargetTextColor == newTargetColor) // Asegura que el color del texto sea diferente
+                    } while (newTargetTextColor == newTargetColor)
                 }
 
                 currentState.copy(
                     gameState = GamePhase.ESPERA,
                     targetColorName = newTargetColor.nombre,
                     roundColorName = GameColor.fromName("GRIS").nombre,
-                    targetTextColorName = newTargetTextColor?.nombre // Será null si no es modo Confusión
+                    targetTextColorName = newTargetTextColor?.nombre
                 )
             }
             // 2. Delay aleatorio
@@ -151,7 +151,6 @@ class ReflexViewModel(
     }
 
     fun processTouch(player: Int) {
-        // Evitar dobles toques
         if (_uiState.value.gameState == GamePhase.PROCESANDO || _uiState.value.gameState == GamePhase.GAME_OVER) {
             return
         }
@@ -161,8 +160,6 @@ class ReflexViewModel(
 
         val moveLog = "P$player tocó en ${System.currentTimeMillis()}"
         var shouldStartNextRound = false
-
-        // ¡CORREGIDO! La lógica de fin de juego se maneja fuera del update
         var nextState: GameUiState? = null
 
         _uiState.update { currentState ->
@@ -170,6 +167,8 @@ class ReflexViewModel(
 
             when (currentState.gameState) {
                 GamePhase.ESPERA -> {
+                    // ¡SONIDO! Tocar antes de tiempo es un error
+                    soundManager.play(SoundManager.SoundType.ERROR)
                     shouldStartNextRound = true
                     val newScoreJ1 = if (player == 1) (currentState.scoreJ1 - 1).coerceAtLeast(0) else currentState.scoreJ1
                     val newScoreJ2 = if (player == 2) (currentState.scoreJ2 - 1).coerceAtLeast(0) else currentState.scoreJ2
@@ -186,30 +185,33 @@ class ReflexViewModel(
                     var newScoreJ1 = currentState.scoreJ1
                     var newScoreJ2 = currentState.scoreJ2
 
-                    // Timeout (Jugador 0)
-                    if (player == 0) {
+                    if (player == 0) { // Timeout
                         if (isCorrect) {
-                            // SÍ era el color correcto, pero nadie presionó. ¡Penalización!
+                            // ¡SONIDO! No presionar en el color correcto es un error
+                            soundManager.play(SoundManager.SoundType.ERROR)
                             newScoreJ1 = (newScoreJ1 - 1).coerceAtLeast(0)
                             newScoreJ2 = (newScoreJ2 - 1).coerceAtLeast(0)
+                        } else {
+                            // No presionar en el color incorrecto está bien. Sin sonido.
                         }
-                    } else if (isCorrect) { // Un jugador (1 o 2) presionó y era el color CORRECTO
+                    } else if (isCorrect) { // Acierto
+                        // ¡SONIDO! Acierto
+                        soundManager.play(SoundManager.SoundType.ACIERTO)
                         if (player == 1) newScoreJ1++ else newScoreJ2++
-                    } else { // Un jugador (1 o 2) presionó y era el color INCORRECTO
+                    } else { // Error
+                        // ¡SONIDO! Error
+                        soundManager.play(SoundManager.SoundType.ERROR)
                         if (player == 1) newScoreJ2++ else newScoreJ1++
                     }
 
-                    // Comprobar si el juego termina (para CLASSIC/CONFUSION)
                     if (currentState.gameMode != GameMode.TIME_ATTACK) {
                         if (newScoreJ1 >= metaPuntuacion || newScoreJ2 >= metaPuntuacion) {
                             val winner = if (newScoreJ1 > newScoreJ2) 1 else 2
-                            // Preparamos el estado de fin de juego
                             nextState = endGameClassic(newScoreJ1, newScoreJ2, winner, newMoveHistory)
-                            return@update nextState!! // Salimos del update con el estado final
+                            return@update nextState!!
                         }
                     }
 
-                    // Si el juego no termina, pasa a PROCESANDO
                     shouldStartNextRound = true
                     currentState.copy(
                         scoreJ1 = newScoreJ1,
@@ -219,7 +221,6 @@ class ReflexViewModel(
                     )
                 }
 
-                // Estados ya cubiertos
                 GamePhase.PROCESANDO, GamePhase.GAME_OVER, GamePhase.PAUSED -> currentState
             }
         }
@@ -232,12 +233,13 @@ class ReflexViewModel(
         }
     }
 
-    // ¡CORREGIDO! Esta función ahora DEVUELVE el estado de GAME_OVER, no actualiza la UI
     private fun endGameClassic(scoreJ1: Int, scoreJ2: Int, winner: Int, history: List<String>): GameUiState {
         timerJob?.cancel()
         viewModelScope.launch {
             statsRepository.recordGameWin(winner)
         }
+        // ¡SONIDO! Fin de la partida
+        soundManager.play(SoundManager.SoundType.GANAR)
 
         return _uiState.value.copy(
             scoreJ1 = scoreJ1,
@@ -248,7 +250,6 @@ class ReflexViewModel(
         )
     }
 
-    // ¡CORREGIDO! Esta función SÍ actualiza la UI porque se llama desde un Job
     private fun endGameTimeAttack() {
         gameJob?.cancel()
         timerJob?.cancel()
@@ -261,6 +262,8 @@ class ReflexViewModel(
             }
             if(winner != 0) {
                 viewModelScope.launch { statsRepository.recordGameWin(winner) }
+                // ¡SONIDO! Solo si hay ganador
+                soundManager.play(SoundManager.SoundType.GANAR)
             }
 
             val winnerMsg = when (winner) {
@@ -277,14 +280,11 @@ class ReflexViewModel(
         }
     }
 
-    // Función para el botón "Reiniciar"
     fun resetCurrentGame() {
-        // Reinicia el juego con el modo actual
         startGame(_uiState.value.gameMode)
     }
 
     fun saveCurrentGame(fileName: String, format: SaveFormat) {
-        // Pausamos el juego antes de guardar
         gameJob?.cancel()
         timerJob?.cancel()
         _uiState.update { it.copy(gameState = GamePhase.PAUSED) }
@@ -299,10 +299,8 @@ class ReflexViewModel(
         viewModelScope.launch {
             val loadedState = gameSaveRepository.loadGame(fileName)
             if (loadedState != null) {
-                // Estado cargado, pausamos los timers
                 gameJob?.cancel()
                 timerJob?.cancel()
-                // Nos aseguramos de que el estado esté en PAUSA
                 _uiState.value = loadedState.copy(gameState = GamePhase.PAUSED)
             } else {
                 Log.w("ReflexViewModel", "No se pudo cargar la partida: $fileName")
@@ -310,12 +308,10 @@ class ReflexViewModel(
         }
     }
 
-    // Función para reanudar el juego si está en pausa
     fun resumeGame() {
         if (_uiState.value.gameState == GamePhase.PAUSED) {
-            // No reinicia la ronda, solo los timers
             startTimer()
-            startRound() // Re-lanza la ronda (podríamos guardar más estado para evitar esto, pero así es más simple)
+            startRound()
         }
     }
 }

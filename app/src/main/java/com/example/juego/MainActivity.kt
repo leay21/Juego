@@ -30,7 +30,8 @@ class MainActivity : ComponentActivity() {
         AppViewModelFactory(
             application.statsRepository,
             application.themeRepository,
-            application.gameSaveRepository // ¡NUEVO!
+            application.gameSaveRepository,
+            application.soundManager
         )
     }
 
