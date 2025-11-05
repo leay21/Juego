@@ -31,7 +31,8 @@ class MainActivity : ComponentActivity() {
             application.statsRepository,
             application.themeRepository,
             application.gameSaveRepository,
-            application.soundManager
+            application.soundManager,
+            application.savedGameMetadataDao
         )
     }
 

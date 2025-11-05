@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.juego.data.GameSaveRepository
 import com.example.juego.data.GameStats
 import com.example.juego.data.SaveFormat
-import com.example.juego.data.SoundManager // ¡NUEVO IMPORT!
+import com.example.juego.data.SoundManager
 import com.example.juego.data.StatsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -18,12 +18,15 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import com.example.juego.data.SavedGameMetadata // ¡NUEVO!
+import com.example.juego.data.SavedGameMetadataDao // ¡NUEVO!
 
 // ¡MODIFICADO! Añadido soundManager al constructor
 class ReflexViewModel(
     private val statsRepository: StatsRepository,
     private val gameSaveRepository: GameSaveRepository,
-    private val soundManager: SoundManager // ¡NUEVO!
+    private val soundManager: SoundManager,
+    private val metadataDao: SavedGameMetadataDao // ¡NUEVO!
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GameUiState())
@@ -295,13 +298,30 @@ class ReflexViewModel(
     }
 
     fun saveCurrentGame(fileName: String, format: SaveFormat) {
+        // Pausamos el juego antes de guardar
         gameJob?.cancel()
         timerJob?.cancel()
         _uiState.update { it.copy(gameState = GamePhase.PAUSED) }
 
+        // Creamos una variable local para el estado actual
+        val currentState = _uiState.value
+        val fullFileName = "$fileName${format.extension}"
+
         viewModelScope.launch {
-            gameSaveRepository.saveGame(_uiState.value, fileName, format)
-            Log.i("ReflexViewModel", "Partida guardada: $fileName")
+            // 1. Guardar el archivo (como antes)
+            gameSaveRepository.saveGame(currentState, fileName, format)
+
+            // 2. ¡NUEVO! Crear y guardar los metadatos en Room
+            val metadata = SavedGameMetadata(
+                fileName = fullFileName,
+                scoreJ1 = currentState.scoreJ1,
+                scoreJ2 = currentState.scoreJ2,
+                gameMode = currentState.gameMode,
+                timestamp = System.currentTimeMillis() // Fecha y hora actual
+            )
+            metadataDao.insert(metadata)
+
+            Log.i("ReflexViewModel", "Partida guardada: $fullFileName y metadatos guardados.")
         }
     }
 

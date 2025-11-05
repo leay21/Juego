@@ -12,6 +12,8 @@ class ReflexApplication : Application() {
     // Repositorio de Estadísticas (Room)
     private val database by lazy { AppDatabase.getDatabase(this) }
     val statsRepository by lazy { StatsRepository(database.statsDao()) }
+    // ¡NUEVO! DAO de Metadatos de Partidas Guardadas
+    val savedGameMetadataDao by lazy { database.savedGameMetadataDao() }
 
     // ¡NUEVO! Repositorio de Temas (DataStore)
     val themeRepository by lazy { ThemeRepository(this) }

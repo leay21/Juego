@@ -9,37 +9,41 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember // ¡IMPORT AÑADIDO!
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight // ¡IMPORT AÑADIDO!
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.juego.data.SaveFormat
 import com.example.juego.ui.theme.AppTheme
+import com.example.juego.data.SavedGameMetadata
+import com.example.juego.GameMode // ¡IMPORT AÑADIDO!
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     navController: NavController,
     settingsViewModel: SettingsViewModel,
-    reflexViewModel: ReflexViewModel // ¡NUEVO! Para cargar partidas
+    reflexViewModel: ReflexViewModel
 ) {
     // --- Obtener todos los estados ---
     val currentTheme by settingsViewModel.appTheme.collectAsState()
     val currentFormat by settingsViewModel.saveFormat.collectAsState()
     val savedGames by settingsViewModel.savedGames.collectAsState()
 
-    // ¡NUEVO! Actualiza la lista de partidas cada vez que entras a esta pantalla
-    LaunchedEffect(key1 = Unit) {
-        settingsViewModel.refreshSavedGamesList()
-    }
+    // ¡CORREGIDO! 'LaunchedEffect' para refrescar la lista no es necesario
+    // porque estamos usando un Flow de Room, que se actualiza solo.
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Ajustes y Partidas") }, // Título actualizado
+                title = { Text("Ajustes y Partidas") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
@@ -48,7 +52,6 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
-        // ¡MODIFICADO! Usamos LazyColumn para toda la pantalla
         LazyColumn(
             modifier = Modifier
                 .padding(padding)
@@ -94,23 +97,17 @@ fun SettingsScreen(
                     )
                 }
             } else {
-                // Genera un item por cada archivo de partida guardado
-                items(savedGames) { fileName ->
+                items(savedGames, key = { it.fileName }) { metadata ->
                     SavedGameItem(
-                        fileName = fileName,
+                        metadata = metadata,
                         onLoad = {
-                            // 1. Llama al ReflexViewModel para cargar el estado
-                            reflexViewModel.loadGame(fileName)
-
-                            // 2. Navega de vuelta a la pantalla de juego
+                            reflexViewModel.loadGame(metadata.fileName)
                             navController.navigate(Screen.Game.route) {
-                                // Limpia el stack para que "Ajustes" no quede atrás
                                 popUpTo(Screen.Home.route)
                             }
                         },
                         onDelete = {
-                            // Llama al SettingsViewModel para borrar el archivo
-                            settingsViewModel.deleteGame(fileName)
+                            settingsViewModel.deleteGame(metadata)
                         }
                     )
                 }
@@ -148,7 +145,7 @@ private fun SelectableRow(
     ) {
         RadioButton(
             selected = selected,
-            onClick = null // El clic se maneja en el Row
+            onClick = null
         )
         Spacer(modifier = Modifier.width(16.dp))
         Text(text = title)
@@ -157,10 +154,25 @@ private fun SelectableRow(
 
 @Composable
 private fun SavedGameItem(
-    fileName: String,
+    metadata: SavedGameMetadata,
     onLoad: () -> Unit,
     onDelete: () -> Unit
 ) {
+    // Función para formatear el timestamp
+    val formattedDate = remember(metadata.timestamp) {
+        val sdf = SimpleDateFormat("dd/MM/yy hh:mm a", Locale.getDefault())
+        sdf.format(Date(metadata.timestamp))
+    }
+
+    // Función para formatear el título del modo
+    val formattedMode = remember(metadata.gameMode) {
+        when(metadata.gameMode) {
+            GameMode.CLASSIC -> "Clásico"
+            GameMode.TIME_ATTACK -> "Contrarreloj"
+            GameMode.CONFUSION -> "Confusión"
+        }
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -173,17 +185,22 @@ private fun SavedGameItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Nombre del archivo
-            Text(
-                text = fileName,
-                modifier = Modifier.weight(1f), // Ocupa el espacio disponible
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
+            // --- Columna de Metadatos ---
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "$formattedMode (${metadata.scoreJ1} - ${metadata.scoreJ2})",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = formattedDate,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             // Botones de acción
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = onLoad) {
                     Text("Cargar")
                 }
