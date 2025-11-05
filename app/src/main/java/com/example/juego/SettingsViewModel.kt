@@ -47,24 +47,33 @@ class SettingsViewModel(
         _saveFormat.value = format
     }
 
-    // --- ¡AQUÍ ESTÁ EL CAMBIO PRINCIPAL! ---
-    // 'savedGames' ya no es un 'MutableStateFlow<List<String>>'.
-    // Ahora es un 'StateFlow<List<SavedGameMetadata>>' que se
-    // alimenta directamente del Flow de Room.
     val savedGames: StateFlow<List<SavedGameMetadata>> = metadataDao.getAll()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
-    // ------------------------------------------
+    // --- Lógica para visualizar contenido ---
+    private val _fileContent = MutableStateFlow<String?>(null)
+    val fileContent: StateFlow<String?> = _fileContent.asStateFlow()
 
-    // ¡ELIMINADO! El 'init' y 'refreshSavedGamesList()' ya no son necesarios
-    // porque el 'Flow' de Room (metadataDao.getAll()) actualiza la UI
-    // automáticamente cada vez que la base de datos cambia.
+    /**
+     * Lee el contenido de un archivo y lo pone en el state.
+     */
+    fun viewFileContent(fileName: String) {
+        viewModelScope.launch {
+            _fileContent.value = gameSaveRepository.readRawFileContent(fileName)
+                ?: "No se pudo leer el archivo." // Mensaje de error si falla
+        }
+    }
 
-    // ¡MODIFICADO! 'deleteGame' ahora recibe 'SavedGameMetadata'
-    // y borra tanto el archivo como la entrada en la base de datos.
+    /**
+     * Limpia el contenido del archivo del state (cierra el diálogo).
+     */
+    fun clearFileContent() {
+        _fileContent.value = null
+    }
+
     fun deleteGame(metadata: SavedGameMetadata) {
         viewModelScope.launch {
             // 1. Borrar el archivo físico

@@ -11,19 +11,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember // ¡IMPORT AÑADIDO!
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight // ¡IMPORT AÑADIDO!
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.juego.data.SaveFormat
 import com.example.juego.ui.theme.AppTheme
 import com.example.juego.data.SavedGameMetadata
-import com.example.juego.GameMode // ¡IMPORT AÑADIDO!
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.foundation.rememberScrollState // ¡NUEVO IMPORT!
+import androidx.compose.foundation.verticalScroll // ¡NUEVO IMPORT!
+import androidx.compose.material.icons.filled.Info // ¡NUEVO IMPORT!
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,9 +38,17 @@ fun SettingsScreen(
     val currentTheme by settingsViewModel.appTheme.collectAsState()
     val currentFormat by settingsViewModel.saveFormat.collectAsState()
     val savedGames by settingsViewModel.savedGames.collectAsState()
+    // ¡NUEVO! Estado para el contenido del archivo
+    val fileContent by settingsViewModel.fileContent.collectAsState()
+    // --- ¡NUEVO! Diálogo para mostrar contenido ---
+    // Si fileContent no es nulo, muestra el diálogo
+    if (fileContent != null) {
+        ShowFileContentDialog(
+            content = fileContent!!,
+            onDismiss = { settingsViewModel.clearFileContent() }
+        )
+    }
 
-    // ¡CORREGIDO! 'LaunchedEffect' para refrescar la lista no es necesario
-    // porque estamos usando un Flow de Room, que se actualiza solo.
 
     Scaffold(
         topBar = {
@@ -108,6 +118,10 @@ fun SettingsScreen(
                         },
                         onDelete = {
                             settingsViewModel.deleteGame(metadata)
+                        },
+                        // ¡NUEVO! Acción para el botón de ver
+                        onView = {
+                            settingsViewModel.viewFileContent(metadata.fileName)
                         }
                     )
                 }
@@ -156,7 +170,8 @@ private fun SelectableRow(
 private fun SavedGameItem(
     metadata: SavedGameMetadata,
     onLoad: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onView: () -> Unit // ¡NUEVO!
 ) {
     // Función para formatear el timestamp
     val formattedDate = remember(metadata.timestamp) {
@@ -201,6 +216,10 @@ private fun SavedGameItem(
 
             // Botones de acción
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // ¡NUEVO! Botón de ver
+                IconButton(onClick = onView) {
+                    Icon(Icons.Default.Info, contentDescription = "Ver contenido")
+                }
                 Button(onClick = onLoad) {
                     Text("Cargar")
                 }
@@ -211,4 +230,33 @@ private fun SavedGameItem(
             }
         }
     }
+}
+// --- ¡NUEVO COMPOSABLE! ---
+// Define el AlertDialog que se mostrará
+@Composable
+private fun ShowFileContentDialog(content: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cerrar")
+            }
+        },
+        title = { Text("Contenido del Archivo") },
+        text = {
+            // Un Box con scroll para archivos largos
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp) // Limita la altura del pop-up
+            ) {
+                // Muestra el texto del archivo dentro de un scroll
+                Text(
+                    text = content,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                )
+            }
+        }
+    )
 }
