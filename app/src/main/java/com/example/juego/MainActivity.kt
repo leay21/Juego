@@ -14,13 +14,19 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.juego.ui.theme.JuegoTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.lifecycle.ViewModelProvider
 
+// Creamos un CompositionLocal para nuestra fábrica
+val LocalViewModelFactory = staticCompositionLocalOf<ViewModelProvider.Factory> {
+    error("No ViewModelFactory provided")
+}
 class MainActivity : ComponentActivity() {
-
     // Creamos la fábrica una vez
     private val viewModelFactory: AppViewModelFactory by lazy {
         val application = (application as ReflexApplication)
-        // ¡MODIFICADO! Pasamos el nuevo repositorio a la fábrica
+        // Pasamos el nuevo repositorio a la fábrica
         AppViewModelFactory(
             application.statsRepository,
             application.themeRepository,
@@ -39,44 +45,50 @@ class MainActivity : ComponentActivity() {
             val appTheme by settingsViewModel.appTheme.collectAsState()
 
             // El tema ahora es dinámico y envuelve toda la app
-            JuegoTheme(appTheme = appTheme) {
+            CompositionLocalProvider(LocalViewModelFactory provides viewModelFactory) {
+                JuegoTheme(appTheme = appTheme) {
 
-                val navController = rememberNavController()
+                    val navController = rememberNavController()
 
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    NavHost(
-                        navController = navController,
-                        startDestination = Screen.Home.route // Empezamos en el Menú
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
                     ) {
-                        // Ruta 1: Pantalla Principal (Home)
-                        composable(Screen.Home.route) {
-                            HomeScreen(navController = navController)
-                        }
+                        NavHost(
+                            navController = navController,
+                            startDestination = Screen.Home.route // Empezamos en el Menú
+                        ) {
+                            // Ruta 1: Pantalla Principal (Home)
+                            composable(Screen.Home.route) {
+                                // Pasamos el viewModel explícitamente
+                                HomeScreen(
+                                    navController = navController,
+                                    reflexViewModel = reflexViewModel
+                                )
+                            }
 
-                        // Ruta 2: Pantalla del Juego (Game)
-                        composable(Screen.Game.route) {
-                            // ¡MODIFICADO! Pasamos ambos ViewModels
-                            GameScreen(
-                                reflexViewModel = reflexViewModel,
-                                settingsViewModel = settingsViewModel
-                            )
-                        }
+                            // Ruta 2: Pantalla del Juego (Game)
+                            composable(Screen.Game.route) {
+                                // ¡MODIFICADO! Pasamos ambos ViewModels
+                                GameScreen(
+                                    reflexViewModel = reflexViewModel,
+                                    settingsViewModel = settingsViewModel
+                                )
+                            }
 
-                        // Ruta 3: Ajustes
-                        composable(Screen.Settings.route) {
-                            // ¡MODIFICADO! Pasamos ambos ViewModels
-                            SettingsScreen(
-                                navController = navController,
-                                settingsViewModel = settingsViewModel,
-                                reflexViewModel = reflexViewModel
-                            )
+                            // Ruta 3: Ajustes
+                            composable(Screen.Settings.route) {
+                                // ¡MODIFICADO! Pasamos ambos ViewModels
+                                SettingsScreen(
+                                    navController = navController,
+                                    settingsViewModel = settingsViewModel,
+                                    reflexViewModel = reflexViewModel
+                                )
+                            }
                         }
                     }
                 }
-            }
+                }
         }
     }
 }

@@ -17,10 +17,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 
 @Composable
-fun HomeScreen(navController: NavController) {
+fun HomeScreen(
+    navController: NavController,
+    // ¡NUEVO! Obtenemos el viewModel para poder iniciar el juego
+    reflexViewModel: ReflexViewModel = viewModel(factory = LocalViewModelFactory.current)
+) {
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -39,22 +44,55 @@ fun HomeScreen(navController: NavController) {
                 color = MaterialTheme.colorScheme.primary
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(64.dp))
 
+            // --- ¡MODIFICADO! Botones para cada modo de juego ---
+
+            // Botón Modo Clásico
             Button(
-                onClick = { navController.navigate(Screen.Game.route) },
-                modifier = Modifier.size(width = 200.dp, height = 50.dp)
+                onClick = {
+                    reflexViewModel.startGame(GameMode.CLASSIC)
+                    navController.navigate(Screen.Game.route)
+                },
+                modifier = Modifier.size(width = 250.dp, height = 50.dp)
             ) {
-                Text("Jugar", fontSize = 18.sp)
+                Text("Modo Clásico", fontSize = 18.sp)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Botón Modo Contrarreloj
+            Button(
+                onClick = {
+                    reflexViewModel.startGame(GameMode.TIME_ATTACK)
+                    navController.navigate(Screen.Game.route)
+                },
+                modifier = Modifier.size(width = 250.dp, height = 50.dp)
+            ) {
+                Text("Modo Contrarreloj", fontSize = 18.sp)
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Botón Modo Confusión
+            Button(
+                onClick = {
+                    reflexViewModel.startGame(GameMode.CONFUSION)
+                    navController.navigate(Screen.Game.route)
+                },
+                modifier = Modifier.size(width = 250.dp, height = 50.dp)
+            ) {
+                Text("Modo Confusión", fontSize = 18.sp)
+            }
+
+            Spacer(modifier = Modifier.height(48.dp))
+
+            // Botón de Ajustes
             Button(
                 onClick = { navController.navigate(Screen.Settings.route) },
-                modifier = Modifier.size(width = 200.dp, height = 50.dp)
+                modifier = Modifier.size(width = 250.dp, height = 50.dp)
             ) {
-                Text("Ajustes", fontSize = 18.sp)
+                Text("Ajustes y Partidas Guardadas", fontSize = 18.sp)
             }
         }
     }

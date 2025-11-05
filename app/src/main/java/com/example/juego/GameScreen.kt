@@ -81,7 +81,7 @@ fun GameScreen(
         GameControls(
             state = uiState,
             saveFormat = saveFormat,
-            onReset = { reflexViewModel.resetGame() },
+            onReset = { reflexViewModel.resetCurrentGame() },
             onSave = {
                 // Creamos un nombre de archivo único basado en la hora
                 val fileName = "partida_${System.currentTimeMillis()}"
@@ -187,18 +187,27 @@ fun TargetDisplay(state: GameUiState) {
                         text = "¡Presiona el ${state.targetColor.nombre}!",
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Bold,
-                        color = state.targetColor.color
+                        color = state.targetTextColor.color
                     )
                 }
             }
 
             // ¡NUEVO! Mostrar tiempo transcurrido
-            Text(
-                text = "Tiempo: ${state.timeElapsed}s",
-                fontSize = 16.sp,
-                color = Color.White.copy(alpha = 0.7f),
-                modifier = Modifier.padding(top = 4.dp)
-            )
+            if (state.gameMode == GameMode.TIME_ATTACK) {
+                Text(
+                    text = "Tiempo Restante: ${state.remainingTime}s",
+                    fontSize = 16.sp,
+                    color = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            } else {
+                Text(
+                    text = "Tiempo: ${state.timeElapsed}s",
+                    fontSize = 16.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
 
             // Mostrar puntuación
             if (targetState != GamePhase.GAME_OVER) {
