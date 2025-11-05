@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.juego.data.GameStats
 import com.example.juego.data.SaveFormat // ¡NUEVO!
 import com.example.juego.ui.theme.GrisFondo
+import androidx.compose.runtime.DisposableEffect
 
 // ¡MODIFICADO! Añadimos el SettingsViewModel
 @Composable
@@ -44,11 +45,19 @@ fun GameScreen(
     val stats by reflexViewModel.stats.collectAsStateWithLifecycle()
     // ¡NUEVO! Obtenemos el formato de guardado seleccionado
     val saveFormat by settingsViewModel.saveFormat.collectAsState()
-
+    // Este efecto se ejecuta cuando el Composable es "desechado" (es decir,
+    // cuando el usuario sale de la pantalla del juego).
+    DisposableEffect(key1 = Unit) {
+        onDispose {
+            // Llama a la nueva función de pausa cuando el usuario
+            // sale de esta pantalla (ej. al ir a Ajustes o al presionar "Atrás")
+            reflexViewModel.pauseGame()
+        }
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GrisFondo), //
+            .background(GrisFondo),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         StatsDisplay(stats = stats)

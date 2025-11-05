@@ -279,6 +279,16 @@ class ReflexViewModel(
             )
         }
     }
+    // Esta función la llamaremos desde la UI cuando el usuario salga de la pantalla.
+    fun pauseGame() {
+        // Solo pausar si el juego está corriendo
+        if (uiState.value.gameState != GamePhase.PAUSED && uiState.value.gameState != GamePhase.GAME_OVER) {
+            gameJob?.cancel()
+            timerJob?.cancel()
+            _uiState.update { it.copy(gameState = GamePhase.PAUSED) }
+            Log.d("ReflexViewModel", "Juego pausado automáticamente por salir de la pantalla")
+        }
+    }
 
     fun resetCurrentGame() {
         startGame(_uiState.value.gameMode)
