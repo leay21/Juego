@@ -3,62 +3,68 @@ package com.example.juego
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.juego.data.GameSaveRepository // ¡NUEVO!
-import com.example.juego.data.GameStats // ¡NUEVO!
-import com.example.juego.data.SaveFormat // ¡NUEVO!
-import com.example.juego.data.StatsRepository // ¡NUEVO!
+import com.example.juego.data.GameSaveRepository
+import com.example.juego.data.GameStats
+import com.example.juego.data.SaveFormat
+import com.example.juego.data.SoundManager
+import com.example.juego.data.StatsRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted // ¡NUEVO!
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn // ¡NUEVO!
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import com.example.juego.data.SavedGameMetadata // ¡NUEVO!
+import com.example.juego.data.SavedGameMetadataDao // ¡NUEVO!
 
-// ¡MODIFICADO! Añadir repositorios al constructor
+// ¡MODIFICADO! Añadido soundManager al constructor
 class ReflexViewModel(
     private val statsRepository: StatsRepository,
-    private val gameSaveRepository: GameSaveRepository // ¡NUEVO!
+    private val gameSaveRepository: GameSaveRepository,
+    private val soundManager: SoundManager,
+    private val metadataDao: SavedGameMetadataDao // ¡NUEVO!
 ) : ViewModel() {
 
-    // ¡MODIFICADO! Usamos el constructor secundario
-    private val _uiState = MutableStateFlow(
-        GameUiState(
-            targetColor = GameColor.ROJO,
-            roundColor = GameColor("GRIS", GameColor.fromName("GRIS").color)
-        )
-    )
+    private val _uiState = MutableStateFlow(GameUiState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
-    // ¡NUEVO! Exponer las estadísticas a la UI
     val stats: StateFlow<GameStats> = statsRepository.stats.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = GameStats.default
     )
 
-    // ... (el resto de tus variables: gameJob, metaPuntuacion, etc.)
     private var gameJob: Job? = null
-    private var timerJob: Job? = null // ¡NUEVO! Job para el cronómetro
+    private var timerJob: Job? = null
     private val metaPuntuacion = 5
     private val roundTimeoutMs = 2500L
     private val processingDelayMs = 100L
+    private val timeAttackDuration = 60
 
     init {
-        resetGame()
+        startGame(GameMode.CLASSIC)
     }
 
-    fun resetGame() {
+    // --- ¡NUEVO! Limpiar el SoundPool cuando el ViewModel se destruya ---
+    override fun onCleared() {
+        super.onCleared()
+        soundManager.release()
+    }
+    // ------------------------------------------------------------------
+
+    fun startGame(mode: GameMode) {
         gameJob?.cancel()
-        timerJob?.cancel() // ¡NUEVO!
-        // ¡MODIFICADO! Usamos el constructor secundario
+        timerJob?.cancel()
+
         _uiState.value = GameUiState(
-            targetColor = GameColor.ROJO,
-            roundColor = GameColor("GRIS", GameColor.fromName("GRIS").color)
+            gameMode = mode,
+            remainingTime = timeAttackDuration
         )
+
         startRound()
     }
 
@@ -67,8 +73,22 @@ class ReflexViewModel(
         timerJob = viewModelScope.launch {
             while (true) {
                 delay(1000L) // Cada segundo
-                _uiState.update {
-                    it.copy(timeElapsed = it.timeElapsed + 1)
+
+                val currentMode = _uiState.value.gameMode
+                if (currentMode == GameMode.TIME_ATTACK) {
+                    var newTime = 0
+                    _uiState.update {
+                        newTime = it.remainingTime - 1
+                        it.copy(remainingTime = newTime)
+                    }
+
+                    if (newTime <= 0) {
+                        endGameTimeAttack()
+                    }
+                } else { // CLASSIC y CONFUSION
+                    _uiState.update {
+                        it.copy(timeElapsed = it.timeElapsed + 1)
+                    }
                 }
             }
         }
@@ -76,17 +96,26 @@ class ReflexViewModel(
 
     private fun startRound() {
         gameJob?.cancel()
-        // ¡NUEVO! El timer corre solo durante la ronda
         startTimer()
 
         gameJob = viewModelScope.launch {
             // 1. Estado ESPERA
-            _uiState.update {
-                // Usamos "targetColorName" y "roundColorName"
-                it.copy(
+            _uiState.update { currentState ->
+
+                val newTargetColor = GameColor.getRandom()
+                var newTargetTextColor: GameColor? = null
+
+                if (currentState.gameMode == GameMode.CONFUSION) {
+                    do {
+                        newTargetTextColor = GameColor.getRandom()
+                    } while (newTargetTextColor == newTargetColor)
+                }
+
+                currentState.copy(
                     gameState = GamePhase.ESPERA,
-                    targetColorName = GameColor.getRandom().nombre,
-                    roundColorName = GameColor.fromName("GRIS").nombre
+                    targetColorName = newTargetColor.nombre,
+                    roundColorName = GameColor.fromName("GRIS").nombre,
+                    targetTextColorName = newTargetTextColor?.nombre
                 )
             }
             // 2. Delay aleatorio
@@ -94,7 +123,6 @@ class ReflexViewModel(
             // 3. Estado GO
             _uiState.update {
                 if (it.gameState == GamePhase.ESPERA) {
-                    // Usamos "roundColorName"
                     it.copy(
                         gameState = GamePhase.GO,
                         roundColorName = generateRoundColor().nombre
@@ -107,7 +135,6 @@ class ReflexViewModel(
             delay(roundTimeoutMs)
             // 5. Lógica de timeout
             if (_uiState.value.gameState == GamePhase.GO) {
-                // Usamos 0 para el timeout
                 processTouch(0)
             }
         }
@@ -126,27 +153,25 @@ class ReflexViewModel(
         }
     }
 
-
     fun processTouch(player: Int) {
         if (_uiState.value.gameState == GamePhase.PROCESANDO || _uiState.value.gameState == GamePhase.GAME_OVER) {
-            return // Evitar dobles toques
+            return
         }
 
-        // ¡NUEVO! Pausar timers
         gameJob?.cancel()
         timerJob?.cancel()
 
-        var shouldStartNextRound = false
-
-        // ¡NUEVO! Registrar movimiento
         val moveLog = "P$player tocó en ${System.currentTimeMillis()}"
+        var shouldStartNextRound = false
+        var nextState: GameUiState? = null
 
         _uiState.update { currentState ->
-            // ¡NUEVO! Añadir movimiento al historial
             val newMoveHistory = currentState.moveHistory + moveLog
 
             when (currentState.gameState) {
                 GamePhase.ESPERA -> {
+                    // ¡SONIDO! Tocar antes de tiempo es un error
+                    soundManager.play(SoundManager.SoundType.ERROR)
                     shouldStartNextRound = true
                     val newScoreJ1 = if (player == 1) (currentState.scoreJ1 - 1).coerceAtLeast(0) else currentState.scoreJ1
                     val newScoreJ2 = if (player == 2) (currentState.scoreJ2 - 1).coerceAtLeast(0) else currentState.scoreJ2
@@ -154,7 +179,7 @@ class ReflexViewModel(
                         scoreJ1 = newScoreJ1,
                         scoreJ2 = newScoreJ2,
                         gameState = GamePhase.PROCESANDO,
-                        moveHistory = newMoveHistory // Actualizar historial
+                        moveHistory = newMoveHistory
                     )
                 }
 
@@ -163,42 +188,42 @@ class ReflexViewModel(
                     var newScoreJ1 = currentState.scoreJ1
                     var newScoreJ2 = currentState.scoreJ2
 
-                    // Timeout (Jugador 0)
-                    if (player == 0) {
-                        newScoreJ1 = (newScoreJ1 - 1).coerceAtLeast(0)
-                        newScoreJ2 = (newScoreJ2 - 1).coerceAtLeast(0)
-                    } else if (isCorrect) {
+                    if (player == 0) { // Timeout
+                        if (isCorrect) {
+                            // ¡SONIDO! No presionar en el color correcto es un error
+                            soundManager.play(SoundManager.SoundType.ERROR)
+                            newScoreJ1 = (newScoreJ1 - 1).coerceAtLeast(0)
+                            newScoreJ2 = (newScoreJ2 - 1).coerceAtLeast(0)
+                        } else {
+                            // No presionar en el color incorrecto está bien. Sin sonido.
+                        }
+                    } else if (isCorrect) { // Acierto
+                        // ¡SONIDO! Acierto
+                        soundManager.play(SoundManager.SoundType.ACIERTO)
                         if (player == 1) newScoreJ1++ else newScoreJ2++
-                    } else {
+                    } else { // Error
+                        // ¡SONIDO! Error
+                        soundManager.play(SoundManager.SoundType.ERROR)
                         if (player == 1) newScoreJ2++ else newScoreJ1++
                     }
 
-                    if (newScoreJ1 >= metaPuntuacion || newScoreJ2 >= metaPuntuacion) {
-                        // ¡NUEVO! Registrar la victoria
-                        val winner = if (newScoreJ1 > newScoreJ2) 1 else 2
-                        viewModelScope.launch {
-                            statsRepository.recordGameWin(winner)
+                    if (currentState.gameMode != GameMode.TIME_ATTACK) {
+                        if (newScoreJ1 >= metaPuntuacion || newScoreJ2 >= metaPuntuacion) {
+                            val winner = if (newScoreJ1 > newScoreJ2) 1 else 2
+                            nextState = endGameClassic(newScoreJ1, newScoreJ2, winner, newMoveHistory)
+                            return@update nextState!!
                         }
-
-                        currentState.copy(
-                            scoreJ1 = newScoreJ1,
-                            scoreJ2 = newScoreJ2,
-                            gameState = GamePhase.GAME_OVER,
-                            winnerMessage = "¡GANA ${if (winner == 1) "Jugador 1" else "Jugador 2"}!",
-                            moveHistory = newMoveHistory // Actualizar historial
-                        )
-                    } else {
-                        shouldStartNextRound = true
-                        currentState.copy(
-                            scoreJ1 = newScoreJ1,
-                            scoreJ2 = newScoreJ2,
-                            gameState = GamePhase.PROCESANDO,
-                            moveHistory = newMoveHistory // Actualizar historial
-                        )
                     }
+
+                    shouldStartNextRound = true
+                    currentState.copy(
+                        scoreJ1 = newScoreJ1,
+                        scoreJ2 = newScoreJ2,
+                        gameState = GamePhase.PROCESANDO,
+                        moveHistory = newMoveHistory
+                    )
                 }
 
-                // Estados ya cubiertos al inicio
                 GamePhase.PROCESANDO, GamePhase.GAME_OVER, GamePhase.PAUSED -> currentState
             }
         }
@@ -211,7 +236,66 @@ class ReflexViewModel(
         }
     }
 
-    // --- ¡NUEVAS FUNCIONES DE GUARDADO/CARGA! ---
+    private fun endGameClassic(scoreJ1: Int, scoreJ2: Int, winner: Int, history: List<String>): GameUiState {
+        timerJob?.cancel()
+        viewModelScope.launch {
+            statsRepository.recordGameWin(winner)
+        }
+        // ¡SONIDO! Fin de la partida
+        soundManager.play(SoundManager.SoundType.GANAR)
+
+        return _uiState.value.copy(
+            scoreJ1 = scoreJ1,
+            scoreJ2 = scoreJ2,
+            gameState = GamePhase.GAME_OVER,
+            winnerMessage = "¡GANA ${if (winner == 1) "Jugador 1" else "Jugador 2"}!",
+            moveHistory = history
+        )
+    }
+
+    private fun endGameTimeAttack() {
+        gameJob?.cancel()
+        timerJob?.cancel()
+
+        _uiState.update { currentState ->
+            val winner = when {
+                currentState.scoreJ1 > currentState.scoreJ2 -> 1
+                currentState.scoreJ2 > currentState.scoreJ1 -> 2
+                else -> 0 // Empate
+            }
+            if(winner != 0) {
+                viewModelScope.launch { statsRepository.recordGameWin(winner) }
+                // ¡SONIDO! Solo si hay ganador
+                soundManager.play(SoundManager.SoundType.GANAR)
+            }
+
+            val winnerMsg = when (winner) {
+                1 -> "¡Gana Jugador 1 por puntos!"
+                2 -> "¡Gana Jugador 2 por puntos!"
+                else -> "¡EMPATE!"
+            }
+
+            currentState.copy(
+                gameState = GamePhase.GAME_OVER,
+                winnerMessage = winnerMsg,
+                remainingTime = 0
+            )
+        }
+    }
+    // Esta función la llamaremos desde la UI cuando el usuario salga de la pantalla.
+    fun pauseGame() {
+        // Solo pausar si el juego está corriendo
+        if (uiState.value.gameState != GamePhase.PAUSED && uiState.value.gameState != GamePhase.GAME_OVER) {
+            gameJob?.cancel()
+            timerJob?.cancel()
+            _uiState.update { it.copy(gameState = GamePhase.PAUSED) }
+            Log.d("ReflexViewModel", "Juego pausado automáticamente por salir de la pantalla")
+        }
+    }
+
+    fun resetCurrentGame() {
+        startGame(_uiState.value.gameMode)
+    }
 
     fun saveCurrentGame(fileName: String, format: SaveFormat) {
         // Pausamos el juego antes de guardar
@@ -219,9 +303,25 @@ class ReflexViewModel(
         timerJob?.cancel()
         _uiState.update { it.copy(gameState = GamePhase.PAUSED) }
 
+        // Creamos una variable local para el estado actual
+        val currentState = _uiState.value
+        val fullFileName = "$fileName${format.extension}"
+
         viewModelScope.launch {
-            gameSaveRepository.saveGame(_uiState.value, fileName, format)
-            Log.i("ReflexViewModel", "Partida guardada: $fileName")
+            // 1. Guardar el archivo (como antes)
+            gameSaveRepository.saveGame(currentState, fileName, format)
+
+            // 2. ¡NUEVO! Crear y guardar los metadatos en Room
+            val metadata = SavedGameMetadata(
+                fileName = fullFileName,
+                scoreJ1 = currentState.scoreJ1,
+                scoreJ2 = currentState.scoreJ2,
+                gameMode = currentState.gameMode,
+                timestamp = System.currentTimeMillis() // Fecha y hora actual
+            )
+            metadataDao.insert(metadata)
+
+            Log.i("ReflexViewModel", "Partida guardada: $fullFileName y metadatos guardados.")
         }
     }
 
@@ -229,7 +329,6 @@ class ReflexViewModel(
         viewModelScope.launch {
             val loadedState = gameSaveRepository.loadGame(fileName)
             if (loadedState != null) {
-                // Estado cargado, pausamos los timers
                 gameJob?.cancel()
                 timerJob?.cancel()
                 _uiState.value = loadedState.copy(gameState = GamePhase.PAUSED)
@@ -239,9 +338,9 @@ class ReflexViewModel(
         }
     }
 
-    // Función para reanudar el juego si está en pausa
     fun resumeGame() {
         if (_uiState.value.gameState == GamePhase.PAUSED) {
+            startTimer()
             startRound()
         }
     }

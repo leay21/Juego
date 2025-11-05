@@ -317,4 +317,23 @@ class GameSaveRepository(private val context: Context) {
             false
         }
     }
+    // --- ¡NUEVA FUNCIÓN! ---
+    /**
+     * Lee el contenido crudo de un archivo de guardado como un String.
+     */
+    fun readRawFileContent(fileNameWithExtension: String): String? {
+        val file = File(context.filesDir, fileNameWithExtension)
+        if (!file.exists() || !file.canRead()) {
+            Log.w("GameSaveRepository", "El archivo $fileNameWithExtension no existe o no se puede leer")
+            return null
+        }
+
+        return try {
+            // Lee el archivo entero y lo devuelve como un solo String
+            file.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            Log.e("GameSaveRepository", "Error al leer el archivo crudo", e)
+            null
+        }
+    }
 }
