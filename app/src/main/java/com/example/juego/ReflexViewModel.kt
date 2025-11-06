@@ -45,10 +45,6 @@ class ReflexViewModel(
     private val processingDelayMs = 100L
     private val timeAttackDuration = 60
 
-    init {
-        startGame(GameMode.CLASSIC)
-    }
-
     // --- ¡NUEVO! Limpiar el SoundPool cuando el ViewModel se destruya ---
     override fun onCleared() {
         super.onCleared()
