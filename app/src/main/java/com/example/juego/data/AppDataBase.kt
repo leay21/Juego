@@ -6,13 +6,12 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 // ¡MODIFICADO!
-// 1. Añade SavedGameMetadata a la lista de 'entities'
-// 2. Incrementa la 'version' de 1 a 2
-@Database(entities = [GameStats::class, SavedGameMetadata::class], version = 2, exportSchema = false)
+// Incrementa la 'version' de 2 a 3
+@Database(entities = [GameStats::class, SavedGameMetadata::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun statsDao(): StatsDao
-    abstract fun savedGameMetadataDao(): SavedGameMetadataDao // ¡NUEVO!
+    abstract fun savedGameMetadataDao(): SavedGameMetadataDao
 
     companion object {
         @Volatile
@@ -25,8 +24,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "reflex_game_database"
                 )
-                    // Una migración destructiva es más fácil para desarrollo.
-                    // Borra la BD si la versión cambia.
+                    // fallbackToDestructiveMigration borrará la BD
+                    // y la recreará con el nuevo campo.
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

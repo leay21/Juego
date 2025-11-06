@@ -26,10 +26,13 @@ import java.util.Locale
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Share // ¡NUEVO IMPORT!
-import androidx.compose.runtime.LaunchedEffect // ¡NUEVO IMPORT!
-import androidx.compose.ui.platform.LocalContext // ¡NUEVO IMPORT!
-import android.widget.Toast // ¡NUEVO IMPORT!
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Star // ¡NUEVO IMPORT!
+import androidx.compose.material.icons.filled.StarBorder // ¡NUEVO IMPORT!
+import androidx.compose.ui.graphics.Color // ¡NUEVO IMPORT!
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -141,8 +144,11 @@ fun SettingsScreen(
                         // ¡NUEVO! Acción para el botón de exportar
                         onExport = {
                             settingsViewModel.exportGame(metadata)
+                        },
+                        // ¡NUEVO! Acción para el botón de favorito
+                        onToggleFavorite = {
+                            settingsViewModel.toggleFavorite(metadata)
                         }
-
                     )
                 }
             }
@@ -192,7 +198,8 @@ private fun SavedGameItem(
     onLoad: () -> Unit,
     onDelete: () -> Unit,
     onView: () -> Unit,
-    onExport: () -> Unit // ¡NUEVO!
+    onExport: () -> Unit,
+    onToggleFavorite: () -> Unit // ¡NUEVO!
 ) {
     // Función para formatear el timestamp
     val formattedDate = remember(metadata.timestamp) {
@@ -237,6 +244,15 @@ private fun SavedGameItem(
 
             // Botones de acción
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // --- ¡NUEVO! Botón de Favorito ---
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        imageVector = if (metadata.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = "Marcar como favorito",
+                        tint = if (metadata.isFavorite) Color(0xFFFFD700) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                // ---------------------------------
                 // ¡NUEVO! Botón de Exportar/Compartir
                 IconButton(onClick = onExport) {
                     Icon(Icons.Default.Share, contentDescription = "Exportar partida")

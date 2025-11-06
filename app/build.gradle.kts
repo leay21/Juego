@@ -50,12 +50,10 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation("androidx.compose.material:material-icons-extended")
 
     // ¡CAMBIADO! Usando el nuevo alias
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // ¡ELIMINADO! Esta línea estaba duplicada y hardcodeada
-    // implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
 
     // Para AnimatedContent y animateColorAsState
     implementation("androidx.compose.animation:animation:1.7.0-beta01")

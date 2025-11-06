@@ -12,6 +12,7 @@ data class SavedGameMetadata(
 
     val scoreJ1: Int,
     val scoreJ2: Int,
-    val gameMode: GameMode, // Room guardará esto como un String
-    val timestamp: Long // Para ordenar por fecha
+    val gameMode: GameMode,
+    val timestamp: Long,
+    val isFavorite: Boolean = false // Por defecto, no es favorita
 )

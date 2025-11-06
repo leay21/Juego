@@ -40,7 +40,19 @@ class SettingsViewModel(
             themeRepository.setAppTheme(theme)
         }
     }
-
+    // ¡NUEVA FUNCIÓN!
+    /**
+     * Cambia el estado 'isFavorite' de una partida guardada.
+     */
+    fun toggleFavorite(metadata: SavedGameMetadata) {
+        viewModelScope.launch {
+            // Crea una copia del metadata con el valor de 'isFavorite' invertido
+            val updatedMetadata = metadata.copy(isFavorite = !metadata.isFavorite)
+            // Llama al DAO para actualizar la entrada en la base de datos
+            metadataDao.update(updatedMetadata)
+        }
+    }
+    // -------------------------
     // --- GESTIÓN DE ARCHIVOS ---
     private val _saveFormat = MutableStateFlow(SaveFormat.JSON)
     val saveFormat: StateFlow<SaveFormat> = _saveFormat.asStateFlow()
