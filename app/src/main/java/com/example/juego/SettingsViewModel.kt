@@ -4,8 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.juego.data.GameSaveRepository
 import com.example.juego.data.SaveFormat
-import com.example.juego.data.SavedGameMetadata // ¡NUEVO!
-import com.example.juego.data.SavedGameMetadataDao // ¡NUEVO!
+import com.example.juego.data.SavedGameMetadata
+import com.example.juego.data.SavedGameMetadataDao
 import com.example.juego.data.ThemeRepository
 import com.example.juego.ui.theme.AppTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,18 +13,22 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
-// ¡ELIMINADO! 'update' ya no se usa
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
-// ¡MODIFICADO! El constructor que me pasaste es correcto
 class SettingsViewModel(
     private val themeRepository: ThemeRepository,
     private val gameSaveRepository: GameSaveRepository,
-    private val metadataDao: SavedGameMetadataDao // ¡NUEVO!
+    private val metadataDao: SavedGameMetadataDao
 ) : ViewModel() {
+    // --- Flow para enviar eventos (Toast) a la UI ---
+    private val _toastEvents = MutableSharedFlow<String>()
+    val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
+    // --------------------------------------------------------
 
-    // --- GESTIÓN DE TEMAS --- (Esta parte estaba bien)
-
+    // --- GESTIÓN DE TEMAS ---
     val appTheme: StateFlow<AppTheme> = themeRepository.appTheme.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -37,9 +41,7 @@ class SettingsViewModel(
         }
     }
 
-    // --- GESTIÓN DE ARCHIVOS --- (¡TODA ESTA SECCIÓN HA SIDO CORREGIDA!)
-
-    // La preferencia de formato (esto estaba bien)
+    // --- GESTIÓN DE ARCHIVOS ---
     private val _saveFormat = MutableStateFlow(SaveFormat.JSON)
     val saveFormat: StateFlow<SaveFormat> = _saveFormat.asStateFlow()
 
@@ -47,12 +49,14 @@ class SettingsViewModel(
         _saveFormat.value = format
     }
 
+    // Obtiene las partidas guardadas directamente de Room
     val savedGames: StateFlow<List<SavedGameMetadata>> = metadataDao.getAll()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
     // --- Lógica para visualizar contenido ---
     private val _fileContent = MutableStateFlow<String?>(null)
     val fileContent: StateFlow<String?> = _fileContent.asStateFlow()
@@ -74,6 +78,23 @@ class SettingsViewModel(
         _fileContent.value = null
     }
 
+    /**
+     * Llama al repositorio para exportar un juego y envía un evento Toast.
+     */
+    fun exportGame(metadata: SavedGameMetadata) {
+        viewModelScope.launch {
+            val success = gameSaveRepository.exportGameFile(metadata.fileName)
+            if (success) {
+                _toastEvents.emit("Partida exportada a la carpeta Descargas")
+            } else {
+                _toastEvents.emit("Error al exportar la partida")
+            }
+        }
+    }
+
+    /**
+     * Borra la partida (archivo y metadatos).
+     */
     fun deleteGame(metadata: SavedGameMetadata) {
         viewModelScope.launch {
             // 1. Borrar el archivo físico
@@ -83,4 +104,6 @@ class SettingsViewModel(
             metadataDao.deleteByFileName(metadata.fileName)
         }
     }
+
+    // ¡CORREGIDO! Las líneas duplicadas de _fileContent se eliminaron de aquí.
 }

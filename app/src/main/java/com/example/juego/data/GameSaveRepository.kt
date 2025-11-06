@@ -2,16 +2,21 @@ package com.example.juego.data
 
 import android.content.Context
 import android.util.Log
-import android.util.Xml // ¡NUEVO! Para el Serializer
+import android.util.Xml
 import com.example.juego.GamePhase
 import com.example.juego.GameUiState
 import com.google.gson.Gson
-import org.xmlpull.v1.XmlPullParser // ¡NUEVO! Para el Parser
-import org.xmlpull.v1.XmlSerializer // ¡NUEVO!
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlSerializer
 import java.io.File
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.io.StringWriter
+import android.os.Build
+import android.provider.MediaStore
+import android.content.ContentValues
+import android.webkit.MimeTypeMap
+import android.net.Uri
 
 // Enum para los formatos de archivo
 enum class SaveFormat(val extension: String) {
@@ -25,6 +30,79 @@ class GameSaveRepository(private val context: Context) {
     // Instancia de Gson para serialización JSON
     private val gson = Gson()
 
+    // --- ¡FUNCIÓN CORREGIDA! ---
+    /**
+     * Exporta un archivo de guardado al almacenamiento público (Descargas).
+     * Devuelve true si fue exitoso, false si falló.
+     */
+    fun exportGameFile(fileNameWithExtension: String): Boolean {
+        // 1. Leer el contenido del archivo privado
+        val content = readRawFileContent(fileNameWithExtension)
+        if (content == null) {
+            Log.e("GameSaveRepository", "Fallo al exportar: No se pudo leer el archivo interno.")
+            return false
+        }
+
+        // 2. Obtener el tipo MIME dinámicamente
+        val extension = MimeTypeMap.getFileExtensionFromUrl(fileNameWithExtension)
+        val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            ?: "text/plain"
+
+        // 3. Preparar los metadatos para MediaStore
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileNameWithExtension)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+        }
+
+        // 4. Obtener el ContentResolver
+        val resolver = context.contentResolver
+
+        // --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
+        // 5. Elegir la colección de URI correcta según la versión de Android
+        val uriCollection: Uri
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // MÉTODO MODERNO (API 29+)
+            // Añadimos la ruta relativa para la carpeta "Descargas/JuegoReflejos"
+            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/JuegoReflejos")
+            uriCollection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        } else {
+            // MÉTODO LEGACY (API 24-28)
+            // No podemos usar la colección "Downloads" directamente ni "RELATIVE_PATH".
+            // Guardamos en la colección genérica de archivos.
+            // Esto requiere un permiso que añadiremos en el siguiente paso.
+            uriCollection = MediaStore.Files.getContentUri("external")
+        }
+        // --- FIN DE LA CORRECCIÓN ---
+
+        try {
+            // 6. Crear el archivo en la colección elegida
+            val uri = resolver.insert(uriCollection, contentValues)
+
+            if (uri == null) {
+                Log.e("GameSaveRepository", "Fallo al exportar: No se pudo crear el URI de MediaStore.")
+                return false
+            }
+
+            // 7. Escribir el contenido en el nuevo archivo público
+            resolver.openOutputStream(uri).use { outputStream ->
+                if (outputStream == null) {
+                    Log.e("GameSaveRepository", "Fallo al exportar: No se pudo abrir el OutputStream.")
+                    return false
+                }
+                OutputStreamWriter(outputStream).use {
+                    it.write(content)
+                }
+            }
+
+            Log.i("GameSaveRepository", "Partida exportada exitosamente a $uri")
+            return true
+
+        } catch (e: Exception) {
+            Log.e("GameSaveRepository", "Error al exportar el archivo", e)
+            return false
+        }
+    }
     // --- GUARDADO ---
 
     /**

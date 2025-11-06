@@ -23,9 +23,14 @@ import com.example.juego.data.SavedGameMetadata
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.foundation.rememberScrollState // ¡NUEVO IMPORT!
-import androidx.compose.foundation.verticalScroll // ¡NUEVO IMPORT!
-import androidx.compose.material.icons.filled.Info // ¡NUEVO IMPORT!
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Share // ¡NUEVO IMPORT!
+import androidx.compose.runtime.LaunchedEffect // ¡NUEVO IMPORT!
+import androidx.compose.ui.platform.LocalContext // ¡NUEVO IMPORT!
+import android.widget.Toast // ¡NUEVO IMPORT!
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +39,16 @@ fun SettingsScreen(
     settingsViewModel: SettingsViewModel,
     reflexViewModel: ReflexViewModel
 ) {
+    // ¡NUEVO! Contexto para mostrar el Toast
+    val context = LocalContext.current
+
+    // --- ¡NUEVO! Escucha los eventos Toast del ViewModel ---
+    LaunchedEffect(key1 = Unit) {
+        settingsViewModel.toastEvents.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+    // ----------------------------------------------------
     // --- Obtener todos los estados ---
     val currentTheme by settingsViewModel.appTheme.collectAsState()
     val currentFormat by settingsViewModel.saveFormat.collectAsState()
@@ -122,7 +137,12 @@ fun SettingsScreen(
                         // ¡NUEVO! Acción para el botón de ver
                         onView = {
                             settingsViewModel.viewFileContent(metadata.fileName)
+                        },
+                        // ¡NUEVO! Acción para el botón de exportar
+                        onExport = {
+                            settingsViewModel.exportGame(metadata)
                         }
+
                     )
                 }
             }
@@ -171,7 +191,8 @@ private fun SavedGameItem(
     metadata: SavedGameMetadata,
     onLoad: () -> Unit,
     onDelete: () -> Unit,
-    onView: () -> Unit // ¡NUEVO!
+    onView: () -> Unit,
+    onExport: () -> Unit // ¡NUEVO!
 ) {
     // Función para formatear el timestamp
     val formattedDate = remember(metadata.timestamp) {
@@ -216,6 +237,10 @@ private fun SavedGameItem(
 
             // Botones de acción
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // ¡NUEVO! Botón de Exportar/Compartir
+                IconButton(onClick = onExport) {
+                    Icon(Icons.Default.Share, contentDescription = "Exportar partida")
+                }
                 // ¡NUEVO! Botón de ver
                 IconButton(onClick = onView) {
                     Icon(Icons.Default.Info, contentDescription = "Ver contenido")
