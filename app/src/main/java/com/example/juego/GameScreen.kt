@@ -268,13 +268,13 @@ private fun GameScreenLandscape(
     stats: GameStats,
     saveFormat: SaveFormat,
     onPlayer1Tap: () -> Unit,
-    onPlayer2Tap: ()L -> Unit,
-onReset: () -> Unit,
-onSave: () -> Unit,
-onResume: () -> Unit,
-onPause: () -> Unit,
-onExit: () -> Unit,
-enableControls: Boolean // ¡NUEVO!
+    onPlayer2Tap: () -> Unit, // <-- ¡AQUÍ ESTABA EL ERROR 1! (Corregido)
+    onReset: () -> Unit,
+    onSave: () -> Unit,
+    onResume: () -> Unit,
+    onPause: () -> Unit,
+    onExit: () -> Unit,
+    enableControls: Boolean // ¡NUEVO!
 ) {
     Row(
         modifier = Modifier
@@ -376,11 +376,11 @@ fun GameControls(
     state: GameUiState,
     saveFormat: SaveFormat,
     onReset: () -> Unit,
-    onSave: ()D -> Unit,
-onResume: () -> Unit,
-onPause: () -> Unit,
-onExit: () -> Unit,
-enableControls: Boolean // ¡NUEVO!
+    onSave: () -> Unit, // <-- ¡AQUÍ ESTABA EL ERROR 2! (Corregido)
+    onResume: () -> Unit,
+    onPause: () -> Unit,
+    onExit: () -> Unit,
+    enableControls: Boolean // ¡NUEVO!
 ) {
     // El cliente (no-autoridad) no puede Pausar, Guardar, Reiniciar o Reanudar.
     // Solo puede Salir.
