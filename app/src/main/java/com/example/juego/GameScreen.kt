@@ -1,6 +1,6 @@
 package com.example.juego
 
-import android.content.res.Configuration // ¡NUEVO IMPORT!
+import android.content.res.Configuration
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -12,9 +12,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row // ¡NUEVO IMPORT!
-import androidx.compose.foundation.layout.Spacer // ¡NUEVO IMPORT!
-import androidx.compose.foundation.layout.fillMaxHeight // ¡NUEVO IMPORT!
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -28,7 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration // ¡NUEVO IMPORT!
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +36,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.juego.ui.theme.GrisFondo
 import com.example.juego.data.GameStats
 import com.example.juego.data.SaveFormat
+import androidx.compose.foundation.layout.height // ¡NUEVO IMPORT!
+import androidx.compose.ui.graphics.graphicsLayer // ¡NUEVO IMPORT!
 
 // ¡FUNCIÓN PRINCIPAL MODIFICADA!
 @Composable
@@ -117,9 +119,8 @@ private fun GameScreenPortrait(
                 .weight(1f)
                 .fillMaxWidth()
         )
-        // Área Central
+        // ¡MODIFICADO! TargetDisplay ahora se ajusta a su contenido
         TargetDisplay(state = uiState)
-        // Área Jugador 2
         TouchArea(
             player = 2,
             backgroundColor = uiState.roundColor.color,
@@ -175,9 +176,10 @@ private fun GameScreenLandscape(
             verticalArrangement = Arrangement.Center // Centrado verticalmente
         ) {
             StatsDisplay(stats = stats)
-            Spacer(modifier = Modifier.weight(1f)) // Empuja al centro
+            // ¡MODIFICADO! Usamos un Spacer con peso para centrar
+            Spacer(modifier = Modifier.weight(1f))
             TargetDisplay(state = uiState)
-            Spacer(modifier = Modifier.weight(1f)) // Empuja a los bordes
+            Spacer(modifier = Modifier.weight(1f))
             GameControls(
                 state = uiState,
                 saveFormat = saveFormat,
@@ -255,69 +257,107 @@ fun TouchArea(
     }
 }
 
+// --- ¡TargetDisplay TOTALMENTE MODIFICADO! ---
 @Composable
 fun TargetDisplay(state: GameUiState) {
     AnimatedContent(
         targetState = state.gameState,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 24.dp),
+            // ¡MODIFICADO! El padding se aplica dentro
+            .padding(vertical = 16.dp),
         transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(300)) },
         label = "TargetMessage"
     ) { targetState ->
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            when (targetState) {
-                GamePhase.GAME_OVER -> {
-                    Text(
-                        text = state.winnerMessage,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-                GamePhase.PAUSED -> {
-                    Text(
-                        text = "Juego Pausado",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-                else -> {
-                    Text(
-                        text = "¡Presiona el ${state.targetColor.nombre}!",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = state.targetTextColor.color // Usa el color de confusión si existe
-                    )
-                }
-            }
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
 
-            if (state.gameMode == GameMode.TIME_ATTACK) {
-                Text(
-                    text = "Tiempo Restante: ${state.remainingTime}s",
-                    fontSize = 16.sp,
-                    color = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            } else {
-                Text(
-                    text = "Tiempo: ${state.timeElapsed}s",
-                    fontSize = 16.sp,
-                    color = Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
+            // 1. Texto para Jugador 1 (Normal)
+            TargetMessage(targetState, state, isRotated = false)
 
-            if (targetState != GamePhase.GAME_OVER) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 2. Información Central (Tiempo y Puntuación)
+            TimeAndScore(state, targetState)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 3. Texto para Jugador 2 (Invertido)
+            TargetMessage(targetState, state, isRotated = true)
+        }
+    }
+}
+
+// --- ¡NUEVO HELPER COMPOSABLE! ---
+// Muestra el mensaje de estado (Ganador, Pausa o Color Objetivo)
+@Composable
+private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated: Boolean) {
+    // Rota toda la columna 180 grados si es para el Jugador 2
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.graphicsLayer(rotationZ = if (isRotated) 180f else 0f)
+    ) {
+        when (targetState) {
+            GamePhase.GAME_OVER -> {
                 Text(
-                    text = "${state.scoreJ1} - ${state.scoreJ2}",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    modifier = Modifier.padding(top = 8.dp)
+                    text = state.winnerMessage,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
             }
+            GamePhase.PAUSED -> {
+                Text(
+                    text = "Juego Pausado",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            else -> {
+                // Texto del color objetivo
+                Text(
+                    text = "¡Presiona el ${state.targetColor.nombre}!",
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = state.targetTextColor.color // Usa el color (posiblemente de confusión)
+                )
+            }
+        }
+    }
+}
+
+// --- ¡NUEVO HELPER COMPOSABLE! ---
+// Muestra el tiempo y la puntuación (nunca se rota)
+@Composable
+private fun TimeAndScore(state: GameUiState, targetState: GamePhase) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        if (state.gameMode == GameMode.TIME_ATTACK) {
+            Text(
+                text = "Tiempo Restante: ${state.remainingTime}s",
+                fontSize = 16.sp,
+                color = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        } else {
+            Text(
+                text = "Tiempo: ${state.timeElapsed}s",
+                fontSize = 16.sp,
+                color = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+
+        if (targetState != GamePhase.GAME_OVER) {
+            Text(
+                text = "${state.scoreJ1} - ${state.scoreJ2}",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
     }
 }
