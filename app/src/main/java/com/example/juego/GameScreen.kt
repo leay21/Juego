@@ -38,9 +38,12 @@ import com.example.juego.data.GameStats
 import com.example.juego.data.SaveFormat
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.navigation.NavController // ¡NUEVO IMPORT!
 
+// ¡MODIFICADO! Añadido NavController
 @Composable
 fun GameScreen(
+    navController: NavController, // ¡NUEVO!
     reflexViewModel: ReflexViewModel,
     settingsViewModel: SettingsViewModel
 ) {
@@ -49,17 +52,17 @@ fun GameScreen(
     val stats by reflexViewModel.stats.collectAsStateWithLifecycle()
     val saveFormat by settingsViewModel.saveFormat.collectAsState()
 
-    // --- 2. Efecto de Pausa ---
+    // --- 2. Efecto de Pausa (se queda igual) ---
     DisposableEffect(key1 = Unit) {
         onDispose {
             reflexViewModel.pauseGame()
         }
     }
 
-    // --- 3. Detectar Orientación ---
+    // --- 3. Detectar Orientación (se queda igual) ---
     val orientation = LocalConfiguration.current.orientation
 
-    // --- 4. Elegir el Layout ---
+    // --- 4. Elegir el Layout (¡MODIFICADO! Pasamos nuevos lambdas) ---
     if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
         GameScreenLandscape(
             uiState = uiState,
@@ -71,7 +74,9 @@ fun GameScreen(
                 val fileName = "partida_${System.currentTimeMillis()}"
                 reflexViewModel.saveCurrentGame(fileName, saveFormat)
             },
-            onResume = { reflexViewModel.resumeGame() }
+            onResume = { reflexViewModel.resumeGame() },
+            onPause = { reflexViewModel.pauseGame() }, // ¡NUEVO!
+            onExit = { navController.popBackStack() }   // ¡NUEVO!
         )
     } else {
         GameScreenPortrait(
@@ -84,12 +89,14 @@ fun GameScreen(
                 val fileName = "partida_${System.currentTimeMillis()}"
                 reflexViewModel.saveCurrentGame(fileName, saveFormat)
             },
-            onResume = { reflexViewModel.resumeGame() }
+            onResume = { reflexViewModel.resumeGame() },
+            onPause = { reflexViewModel.pauseGame() }, // ¡NUEVO!
+            onExit = { navController.popBackStack() }   // ¡NUEVO!
         )
     }
 }
 
-// --- Layout para Modo Vertical (Portrait) ---
+// ¡MODIFICADO! Añadidos onPause y onExit
 @Composable
 private fun GameScreenPortrait(
     uiState: GameUiState,
@@ -98,7 +105,9 @@ private fun GameScreenPortrait(
     onPlayerTap: (Int) -> Unit,
     onReset: () -> Unit,
     onSave: () -> Unit,
-    onResume: () -> Unit
+    onResume: () -> Unit,
+    onPause: () -> Unit, // ¡NUEVO!
+    onExit: () -> Unit   // ¡NUEVO!
 ) {
     Column(
         modifier = Modifier
@@ -107,7 +116,6 @@ private fun GameScreenPortrait(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         StatsDisplay(stats = stats)
-        // Área Jugador 1 (Arriba)
         TouchArea(
             player = 1,
             backgroundColor = uiState.roundColor.color,
@@ -117,7 +125,6 @@ private fun GameScreenPortrait(
                 .fillMaxWidth()
         )
         TargetDisplay(state = uiState)
-        // Área Jugador 2 (Abajo)
         TouchArea(
             player = 2,
             backgroundColor = uiState.roundColor.color,
@@ -126,17 +133,20 @@ private fun GameScreenPortrait(
                 .weight(1f)
                 .fillMaxWidth()
         )
+        // Pasamos los nuevos controles
         GameControls(
             state = uiState,
             saveFormat = saveFormat,
             onReset = onReset,
             onSave = onSave,
-            onResume = onResume
+            onResume = onResume,
+            onPause = onPause,
+            onExit = onExit
         )
     }
 }
 
-// --- Layout para Modo Horizontal (Landscape) ---
+// ¡MODIFICADO! Añadidos onPause y onExit
 @Composable
 private fun GameScreenLandscape(
     uiState: GameUiState,
@@ -145,7 +155,9 @@ private fun GameScreenLandscape(
     onPlayerTap: (Int) -> Unit,
     onReset: () -> Unit,
     onSave: () -> Unit,
-    onResume: () -> Unit
+    onResume: () -> Unit,
+    onPause: () -> Unit, // ¡NUEVO!
+    onExit: () -> Unit   // ¡NUEVO!
 ) {
     Row(
         modifier = Modifier
@@ -153,7 +165,6 @@ private fun GameScreenLandscape(
             .background(GrisFondo),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Área Jugador 1 (Izquierda)
         TouchArea(
             player = 1,
             backgroundColor = uiState.roundColor.color,
@@ -162,7 +173,6 @@ private fun GameScreenLandscape(
                 .weight(1f)
                 .fillMaxHeight()
         )
-        // Área Central (Columna)
         Column(
             modifier = Modifier
                 .weight(1.5f)
@@ -175,15 +185,17 @@ private fun GameScreenLandscape(
             Spacer(modifier = Modifier.weight(1f))
             TargetDisplay(state = uiState)
             Spacer(modifier = Modifier.weight(1f))
+            // Pasamos los nuevos controles
             GameControls(
                 state = uiState,
                 saveFormat = saveFormat,
                 onReset = onReset,
                 onSave = onSave,
-                onResume = onResume
+                onResume = onResume,
+                onPause = onPause,
+                onExit = onExit
             )
         }
-        // Área Jugador 2 (Derecha)
         TouchArea(
             player = 2,
             backgroundColor = uiState.roundColor.color,
@@ -196,8 +208,7 @@ private fun GameScreenLandscape(
 }
 
 
-// --- COMPOSABLES REUTILIZABLES ---
-
+// ... (StatsDisplay no cambia) ...
 @Composable
 fun StatsDisplay(stats: GameStats) {
     Row(
@@ -224,6 +235,7 @@ fun StatsDisplay(stats: GameStats) {
     }
 }
 
+// ¡MODIFICADO! Se añade la rotación al texto del Jugador 1
 @Composable
 fun TouchArea(
     player: Int,
@@ -248,12 +260,13 @@ fun TouchArea(
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,
+            // Rota el texto del Jugador 1
             modifier = if (player == 1) Modifier.graphicsLayer(rotationZ = 180f) else Modifier
         )
     }
 }
 
-// --- ¡TargetDisplay CORREGIDO! ---
+// ... (TargetDisplay, TargetMessage, y TimeAndScore no cambian) ...
 @Composable
 fun TargetDisplay(state: GameUiState) {
     AnimatedContent(
@@ -269,7 +282,6 @@ fun TargetDisplay(state: GameUiState) {
             modifier = Modifier.fillMaxWidth()
         ) {
 
-            // --- ¡CORREGIDO! ---
             // 1. Texto para Jugador 1 (Arriba) -> ¡ROTADO!
             TargetMessage(targetState, state, isRotated = true)
 
@@ -280,17 +292,14 @@ fun TargetDisplay(state: GameUiState) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- ¡CORREGIDO! ---
             // 3. Texto para Jugador 2 (Abajo) -> ¡NORMAL!
             TargetMessage(targetState, state, isRotated = false)
         }
     }
 }
 
-// Muestra el mensaje de estado (Ganador, Pausa o Color Objetivo)
 @Composable
 private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated: Boolean) {
-    // Rota toda la columna 180 grados si es necesario
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.graphicsLayer(rotationZ = if (isRotated) 180f else 0f)
@@ -324,7 +333,6 @@ private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated:
     }
 }
 
-// Muestra el tiempo y la puntuación (nunca se rota)
 @Composable
 private fun TimeAndScore(state: GameUiState, targetState: GamePhase) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -357,42 +365,82 @@ private fun TimeAndScore(state: GameUiState, targetState: GamePhase) {
 }
 
 
+// --- ¡GameControls TOTALMENTE MODIFICADO! ---
 @Composable
 fun GameControls(
     state: GameUiState,
     saveFormat: SaveFormat,
     onReset: () -> Unit,
     onSave: () -> Unit,
-    onResume: () -> Unit
+    onResume: () -> Unit,
+    onPause: () -> Unit, // ¡NUEVO!
+    onExit: () -> Unit    // ¡NUEVO!
 ) {
-    Row(
+    // Usamos una Columna para poder poner 2 filas de botones si es necesario
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         when (state.gameState) {
             GamePhase.GAME_OVER -> {
-                Button(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
-                    Text(text = "Nueva Partida", fontSize = 18.sp)
+                // Fila 1: Nueva Partida y Salir
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Button(onClick = onReset, modifier = Modifier.weight(1f)) {
+                        Text(text = "Nueva Partida", fontSize = 18.sp)
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Button(onClick = onExit, modifier = Modifier.weight(1f)) {
+                        Text(text = "Salir", fontSize = 18.sp)
+                    }
                 }
             }
             GamePhase.PAUSED -> {
-                Button(onClick = onResume, modifier = Modifier.weight(1f)) {
-                    Text(text = "Reanudar", fontSize = 18.sp)
+                // Fila 1: Reanudar y Guardar
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Button(onClick = onResume, modifier = Modifier.weight(1f)) {
+                        Text(text = "Reanudar", fontSize = 18.sp)
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Button(onClick = onSave, modifier = Modifier.weight(1f)) {
+                        Text(text = "Guardar", fontSize = 18.sp)
+                    }
                 }
-                Spacer(Modifier.width(16.dp))
-                Button(onClick = onReset, modifier = Modifier.weight(1f)) {
-                    Text(text = "Reiniciar", fontSize = 18.sp)
+                Spacer(Modifier.height(8.dp))
+                // Fila 2: Reiniciar y Salir
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Button(onClick = onReset, modifier = Modifier.weight(1f)) {
+                        Text(text = "Reiniciar", fontSize = 18.sp)
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Button(onClick = onExit, modifier = Modifier.weight(1f)) {
+                        Text(text = "Salir", fontSize = 18.sp)
+                    }
                 }
             }
-            else -> { // ESPERA, GO, PROCESANDO
-                Button(onClick = onSave, modifier = Modifier.weight(1f)) {
-                    Text(text = "Guardar", fontSize = 18.sp)
-                }
-                Spacer(modifier = Modifier.width(16.dp))
-                Button(onClick = onReset, modifier = Modifier.weight(1f)) {
-                    Text(text = "Reiniciar", fontSize = 18.sp)
+            else -> { // ESPERA, GO, PROCESANDO (Jugando)
+                // Fila 1: Pausa y Salir
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Button(onClick = onPause, modifier = Modifier.weight(1f)) {
+                        Text(text = "Pausa", fontSize = 18.sp)
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Button(onClick = onExit, modifier = Modifier.weight(1f)) {
+                        Text(text = "Salir", fontSize = 18.sp)
+                    }
                 }
             }
         }

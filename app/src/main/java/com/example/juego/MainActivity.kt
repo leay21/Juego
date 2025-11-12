@@ -69,14 +69,17 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
+                            // --- ¡MODIFICACIÓN AQUÍ! ---
                             // Ruta 2: Pantalla del Juego (Game)
                             composable(Screen.Game.route) {
-                                // ¡MODIFICADO! Pasamos ambos ViewModels
+                                // ¡MODIFICADO! Pasamos ambos ViewModels Y el NavController
                                 GameScreen(
+                                    navController = navController, // <-- AÑADIDO
                                     reflexViewModel = reflexViewModel,
                                     settingsViewModel = settingsViewModel
                                 )
                             }
+                            // --- FIN DE LA MODIFICACIÓN ---
 
                             // Ruta 3: Ajustes
                             composable(Screen.Settings.route) {
@@ -90,7 +93,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                }
+            }
         }
     }
 }
