@@ -19,7 +19,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.example.juego.bt.BluetoothViewModel // ¡NUEVO IMPORT!
+import com.example.juego.bt.BluetoothViewModel
+import com.example.juego.bt.MultiplayerLobbyScreen // ¡NUEVO IMPORT!
 import com.example.juego.ui.theme.JuegoTheme
 
 val LocalViewModelFactory = staticCompositionLocalOf<ViewModelProvider.Factory> {
@@ -29,21 +30,19 @@ class MainActivity : ComponentActivity() {
 
     private val viewModelFactory: AppViewModelFactory by lazy {
         val application = (application as ReflexApplication)
-        // ¡MODIFICADO! Pasamos el nuevo manager
         AppViewModelFactory(
             application.statsRepository,
             application.themeRepository,
             application.gameSaveRepository,
             application.soundManager,
             application.savedGameMetadataDao,
-            application.bluetoothConnectionManager // ¡NUEVO!
+            application.bluetoothConnectionManager
         )
     }
 
     // Pedimos los ViewModels usando la fábrica
     private val reflexViewModel: ReflexViewModel by viewModels { viewModelFactory }
     private val settingsViewModel: SettingsViewModel by viewModels { viewModelFactory }
-    // ¡NUEVO! Creamos la instancia del BluetoothViewModel
     private val bluetoothViewModel: BluetoothViewModel by viewModels { viewModelFactory }
 
 
@@ -76,16 +75,20 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
+                        // --- ¡NAVHOST MODIFICADO! ---
                         NavHost(
                             navController = navController,
                             startDestination = Screen.Home.route
                         ) {
+                            // Ruta 1: Menú Principal (Modificada)
                             composable(Screen.Home.route) {
                                 HomeScreen(
-                                    navController = navController,
-                                    reflexViewModel = reflexViewModel
+                                    navController = navController
+                                    // Ya no necesita el VM
                                 )
                             }
+
+                            // Ruta 2: Pantalla de Juego (Sin cambios)
                             composable(Screen.Game.route) {
                                 GameScreen(
                                     navController = navController,
@@ -93,6 +96,8 @@ class MainActivity : ComponentActivity() {
                                     settingsViewModel = settingsViewModel
                                 )
                             }
+
+                            // Ruta 3: Ajustes (Sin cambios)
                             composable(Screen.Settings.route) {
                                 SettingsScreen(
                                     navController = navController,
@@ -100,9 +105,22 @@ class MainActivity : ComponentActivity() {
                                     reflexViewModel = reflexViewModel
                                 )
                             }
-                            // Próximamente añadiremos aquí las nuevas rutas
-                            // para la UI de multijugador, que usarán el
-                            // 'bluetoothViewModel'
+
+                            // --- ¡NUEVA RUTA 4! ---
+                            composable(Screen.LocalModeSelect.route) {
+                                LocalModeScreen(
+                                    navController = navController,
+                                    reflexViewModel = reflexViewModel
+                                )
+                            }
+
+                            // --- ¡NUEVA RUTA 5! ---
+                            composable(Screen.MultiplayerLobby.route) {
+                                MultiplayerLobbyScreen(
+                                    navController = navController,
+                                    viewModel = bluetoothViewModel
+                                )
+                            }
                         }
                     }
                 }
