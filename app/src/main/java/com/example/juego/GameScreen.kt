@@ -1,6 +1,7 @@
 package com.example.juego
 
 import android.content.res.Configuration
+import android.widget.Toast // ¡NUEVO IMPORT!
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
@@ -33,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext // ¡NUEVO IMPORT!
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,90 +50,84 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.navigation.NavController
 import kotlinx.coroutines.flow.collectLatest
 
-// ¡MODIFICADO! Añadido BluetoothViewModel
 @Composable
 fun GameScreen(
     navController: NavController,
     reflexViewModel: ReflexViewModel,
     settingsViewModel: SettingsViewModel,
-    bluetoothViewModel: BluetoothViewModel // ¡NUEVO!
+    bluetoothViewModel: BluetoothViewModel
 ) {
     // --- 1. Determinar el Rol (Host, Client, Local) ---
     val btState by bluetoothViewModel.connectionState.collectAsState()
 
-    // Suponemos que somos Anfitrión si estábamos Escuchando,
-    // y Cliente si estábamos Conectando.
-    // 'remember' asegura que esto no cambie durante la recomposición.
     val isHost = remember { btState == ConnectionState.LISTENING }
     val isClient = remember { btState == ConnectionState.CONNECTING }
     val isLocal = !isHost && !isClient
 
-    // El rol determina si el juego se controla localmente
     val isGameAuthority = isLocal || isHost
 
     // --- 2. Obtener el Estado del Juego (GameUiState) ---
-
-    // El estado del Host/Local viene del ReflexViewModel
     val localUiState by reflexViewModel.uiState.collectAsStateWithLifecycle()
-
-    // El estado del Cliente viene de un 'remember' que se actualiza por Bluetooth
     var clientUiState by remember { mutableStateOf(GameUiState()) }
-
-    // El estado final que ve la UI
     val uiState = if (isGameAuthority) localUiState else clientUiState
 
-    // --- 3. Obtener otros estados (Stats, Formato de guardado) ---
+    // --- 3. Obtener otros estados ---
     val stats by reflexViewModel.stats.collectAsStateWithLifecycle()
     val saveFormat by settingsViewModel.saveFormat.collectAsState()
-
-    // --- ¡NUEVO! Obtener el modo seleccionado ---
     val selectedGameMode by bluetoothViewModel.selectedGameMode.collectAsState()
-    // --------------------------------------------
 
-    // ----------------------------------------------------
-    // !! ¡BLOQUE MODIFICADO! !!
-    // ----------------------------------------------------
+    // ¡NUEVO! Contexto para el Toast
+    val context = LocalContext.current
+
+    // --- 4. Lógica de Arranque y Desconexión ---
+
+    // (A) Inicia el juego si somos el Anfitrión
     LaunchedEffect(key1 = isHost) {
         if (isHost) {
-            // ¡Ahora usa el modo seleccionado!
             reflexViewModel.startGame(selectedGameMode)
         }
     }
-    // ----------------------------------------------------
 
+    // (B) ¡NUEVO! Maneja la desconexión
+    LaunchedEffect(key1 = btState) {
+        // Si el estado (en vivo) vuelve a IDLE, y recordamos que
+        // esta pantalla ERA una partida BT (isHost o isClient es true)...
+        if (btState == ConnectionState.IDLE && (isHost || isClient)) {
+            // ...entonces la conexión se perdió.
+            Toast.makeText(context, "Conexión perdida", Toast.LENGTH_SHORT).show()
+            navController.popBackStack()
+        }
+    }
 
-    // --- 4. Lógica de Comunicación Bluetooth ---
+    // --- 5. Lógica de Comunicación Bluetooth ---
+
+    // (A) Anfitrión: Envía el estado al cliente cuando cambia
     LaunchedEffect(key1 = localUiState, key2 = isHost) {
-        // ANFITRIÓN (Host): Si el estado local cambia, envíalo al cliente.
         if (isHost) {
             bluetoothViewModel.sendMessage(BluetoothMessage.GameState(localUiState))
         }
     }
 
+    // (B) Cliente/Anfitrión: Escucha mensajes
     LaunchedEffect(key1 = isGameAuthority) {
-        // CLIENTE: Escucha por actualizaciones de estado del Anfitrión
-        // ANFITRIÓN: Escucha por toques del Cliente
         bluetoothViewModel.receivedMessages.collectLatest { message ->
             when(message) {
                 is BluetoothMessage.GameState -> {
-                    // Si soy Cliente, actualizo mi estado
-                    if (isClient) {
+                    if (isClient) { // Cliente: actualiza su UI
                         clientUiState = message.state
                     }
                 }
                 is BluetoothMessage.PlayerTouch -> {
-                    // Si soy Anfitrión, proceso el toque del Cliente como Jugador 2
-                    if (isHost) {
+                    if (isHost) { // Anfitrión: procesa el toque del cliente
                         reflexViewModel.processTouch(2)
                     }
                 }
-                // (Manejar otros mensajes como StartGame, ResetGame si los implementamos)
                 else -> {}
             }
         }
     }
 
-    // --- 5. Lógica de Pausa/Salir ---
+    // --- 6. Lógica de Pausa/Salir ---
     DisposableEffect(key1 = Unit) {
         onDispose {
             if (isLocal) {
@@ -143,25 +139,24 @@ fun GameScreen(
         }
     }
 
-    // --- 6. Detectar Orientación ---
+    // --- 7. Detectar Orientación ---
     val orientation = LocalConfiguration.current.orientation
 
-    // --- 7. Elegir y Renderizar el Layout ---
+    // --- 8. Elegir y Renderizar el Layout ---
     val onPlayer1Tap = {
         if (isGameAuthority) { // Local o Host
             reflexViewModel.processTouch(1)
         }
-        // Si soy Cliente, no hago nada al tocar J1
+        // Cliente no hace nada
     }
 
     val onPlayer2Tap = {
         if (isLocal) { // Solo Local
             reflexViewModel.processTouch(2)
         } else if (isClient) { // Solo Cliente
-            // Envía el toque al anfitrión
             bluetoothViewModel.sendMessage(BluetoothMessage.PlayerTouch())
         }
-        // Si soy Anfitrión, no hago nada (espero el mensaje BT)
+        // Anfitrión no hace nada (espera el mensaje BT)
     }
 
     if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
@@ -171,7 +166,7 @@ fun GameScreen(
             saveFormat = saveFormat,
             onPlayer1Tap = onPlayer1Tap,
             onPlayer2Tap = onPlayer2Tap,
-            onReset = { /* TODO: Manejar reinicio BT */ reflexViewModel.resetCurrentGame() },
+            onReset = { reflexViewModel.resetCurrentGame() },
             onSave = {
                 val fileName = "partida_${System.currentTimeMillis()}"
                 reflexViewModel.saveCurrentGame(fileName, saveFormat)
@@ -182,7 +177,6 @@ fun GameScreen(
                 if (!isLocal) bluetoothViewModel.closeConnection()
                 navController.popBackStack()
             },
-            // Deshabilitar botones si no somos la autoridad (Cliente)
             enableControls = isGameAuthority
         )
     } else {
@@ -192,7 +186,7 @@ fun GameScreen(
             saveFormat = saveFormat,
             onPlayer1Tap = onPlayer1Tap,
             onPlayer2Tap = onPlayer2Tap,
-            onReset = { /* TODO: Manejar reinicio BT */ reflexViewModel.resetCurrentGame() },
+            onReset = { reflexViewModel.resetCurrentGame() },
             onSave = {
                 val fileName = "partida_${System.currentTimeMillis()}"
                 reflexViewModel.saveCurrentGame(fileName, saveFormat)
@@ -203,7 +197,6 @@ fun GameScreen(
                 if (!isLocal) bluetoothViewModel.closeConnection()
                 navController.popBackStack()
             },
-            // Deshabilitar botones si no somos la autoridad (Cliente)
             enableControls = isGameAuthority
         )
     }
@@ -222,7 +215,7 @@ private fun GameScreenPortrait(
     onResume: () -> Unit,
     onPause: () -> Unit,
     onExit: () -> Unit,
-    enableControls: Boolean // ¡NUEVO!
+    enableControls: Boolean
 ) {
     Column(
         modifier = Modifier
@@ -234,7 +227,7 @@ private fun GameScreenPortrait(
         TouchArea(
             player = 1,
             backgroundColor = uiState.roundColor.color,
-            onPlayerTap = onPlayer1Tap, // Toca J1
+            onPlayerTap = onPlayer1Tap,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -243,7 +236,7 @@ private fun GameScreenPortrait(
         TouchArea(
             player = 2,
             backgroundColor = uiState.roundColor.color,
-            onPlayerTap = onPlayer2Tap, // Toca J2
+            onPlayerTap = onPlayer2Tap,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -256,7 +249,7 @@ private fun GameScreenPortrait(
             onResume = onResume,
             onPause = onPause,
             onExit = onExit,
-            enableControls = enableControls // Pasa el estado de habilitado
+            enableControls = enableControls
         )
     }
 }
@@ -268,13 +261,13 @@ private fun GameScreenLandscape(
     stats: GameStats,
     saveFormat: SaveFormat,
     onPlayer1Tap: () -> Unit,
-    onPlayer2Tap: () -> Unit, // <-- ¡AQUÍ ESTABA EL ERROR 1! (Corregido)
+    onPlayer2Tap: () -> Unit,
     onReset: () -> Unit,
     onSave: () -> Unit,
     onResume: () -> Unit,
     onPause: () -> Unit,
     onExit: () -> Unit,
-    enableControls: Boolean // ¡NUEVO!
+    enableControls: Boolean
 ) {
     Row(
         modifier = Modifier
@@ -285,7 +278,7 @@ private fun GameScreenLandscape(
         TouchArea(
             player = 1,
             backgroundColor = uiState.roundColor.color,
-            onPlayerTap = onPlayer1Tap, // Toca J1
+            onPlayerTap = onPlayer1Tap,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -310,13 +303,13 @@ private fun GameScreenLandscape(
                 onResume = onResume,
                 onPause = onPause,
                 onExit = onExit,
-                enableControls = enableControls // Pasa el estado de habilitado
+                enableControls = enableControls
             )
         }
         TouchArea(
             player = 2,
             backgroundColor = uiState.roundColor.color,
-            onPlayerTap = onPlayer2Tap, // Toca J2
+            onPlayerTap = onPlayer2Tap,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -327,14 +320,16 @@ private fun GameScreenLandscape(
 
 // ... (StatsDisplay no cambia) ...
 @Composable
-fun StatsDisplay(stats: GameStats) { /* ... */ }
+fun StatsDisplay(stats: GameStats) {
+    // (Tu implementación existente)
+}
 
 // ... (TouchArea no cambia) ...
 @Composable
 fun TouchArea(
     player: Int,
     backgroundColor: Color,
-    onPlayerTap: () -> Unit, // Modificado a un lambda simple
+    onPlayerTap: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val animatedColor by animateColorAsState(
@@ -346,7 +341,7 @@ fun TouchArea(
     Box(
         modifier = modifier
             .background(animatedColor)
-            .clickable { onPlayerTap() }, // Llama al lambda
+            .clickable { onPlayerTap() },
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -361,13 +356,19 @@ fun TouchArea(
 
 // ... (TargetDisplay, TargetMessage, y TimeAndScore no cambian) ...
 @Composable
-fun TargetDisplay(state: GameUiState) { /* ... */ }
+fun TargetDisplay(state: GameUiState) {
+    // (Tu implementación existente)
+}
 
 @Composable
-private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated: Boolean) { /* ... */ }
+private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated: Boolean) {
+    // (Tu implementación existente)
+}
 
 @Composable
-private fun TimeAndScore(state: GameUiState, targetState: GamePhase) { /* ... */ }
+private fun TimeAndScore(state: GameUiState, targetState: GamePhase) {
+    // (Tu implementación existente)
+}
 
 
 // --- ¡GameControls MODIFICADO! ---
@@ -376,15 +377,12 @@ fun GameControls(
     state: GameUiState,
     saveFormat: SaveFormat,
     onReset: () -> Unit,
-    onSave: () -> Unit, // <-- ¡AQUÍ ESTABA EL ERROR 2! (Corregido)
+    onSave: () -> Unit,
     onResume: () -> Unit,
     onPause: () -> Unit,
     onExit: () -> Unit,
-    enableControls: Boolean // ¡NUEVO!
+    enableControls: Boolean
 ) {
-    // El cliente (no-autoridad) no puede Pausar, Guardar, Reiniciar o Reanudar.
-    // Solo puede Salir.
-
     val showFullControls = enableControls || state.gameState == GamePhase.GAME_OVER
 
     Column(
