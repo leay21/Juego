@@ -2,7 +2,10 @@ package com.example.juego.bt
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.juego.GameMode // ¡NUEVO IMPORT!
+import kotlinx.coroutines.flow.MutableStateFlow // ¡NUEVO IMPORT!
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow // ¡NUEVO IMPORT!
 import kotlinx.coroutines.launch
 
 class BluetoothViewModel(
@@ -13,6 +16,15 @@ class BluetoothViewModel(
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val scannedDevices: StateFlow<List<BluetoothDeviceDomain>> = connectionManager.scannedDevices
     val receivedMessages = connectionManager.receivedMessages
+
+    // --- ¡NUEVO! Estado para el modo de juego seleccionado ---
+    private val _selectedGameMode = MutableStateFlow(GameMode.CLASSIC)
+    val selectedGameMode: StateFlow<GameMode> = _selectedGameMode.asStateFlow()
+
+    fun selectGameMode(mode: GameMode) {
+        _selectedGameMode.value = mode
+    }
+    // --------------------------------------------------------
 
     // Propiedad de ayuda para la UI
     val hasBluetoothAdapter: Boolean

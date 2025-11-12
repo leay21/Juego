@@ -1,5 +1,6 @@
 package com.example.juego.bt
 
+// (Otros imports...)
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable // ¡NUEVO IMPORT!
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -21,6 +23,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton // ¡NUEVO IMPORT!
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -33,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.juego.GameMode // ¡NUEVO IMPORT!
 import com.example.juego.Screen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,6 +47,7 @@ fun MultiplayerLobbyScreen(
 ) {
     val state by viewModel.connectionState.collectAsState()
     val scannedDevices by viewModel.scannedDevices.collectAsState()
+    val selectedGameMode by viewModel.selectedGameMode.collectAsState() // ¡NUEVO!
 
     // Efecto para navegar a la pantalla de juego una vez conectados
     LaunchedEffect(key1 = state) {
@@ -102,6 +107,17 @@ fun MultiplayerLobbyScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp)) // Espacio reducido
+
+            // --- ¡NUEVO! Selector de Modo de Juego ---
+            GameModeSelector(
+                selectedMode = selectedGameMode,
+                onModeSelected = { viewModel.selectGameMode(it) },
+                // Habilitado si estamos inactivos O si ya somos el anfitrión
+                isEnabled = (state == ConnectionState.IDLE || state == ConnectionState.LISTENING)
+            )
+            // ----------------------------------------
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // Indicador de Estado
@@ -120,6 +136,53 @@ fun MultiplayerLobbyScreen(
         }
     }
 }
+
+// --- ¡NUEVO COMPOSABLE! ---
+@Composable
+private fun GameModeSelector(
+    selectedMode: GameMode,
+    onModeSelected: (GameMode) -> Unit,
+    isEnabled: Boolean
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "Seleccionar Modo de Juego",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        GameMode.entries.forEach { mode ->
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = (mode == selectedMode),
+                        onClick = { onModeSelected(mode) },
+                        enabled = isEnabled
+                    )
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                RadioButton(
+                    selected = (mode == selectedMode),
+                    onClick = null, // onClick se maneja en el 'selectable'
+                    enabled = isEnabled
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = when (mode) { // Nombres más amigables
+                        GameMode.CLASSIC -> "Clásico"
+                        GameMode.TIME_ATTACK -> "Contrarreloj"
+                        GameMode.CONFUSION -> "Confusión"
+                    },
+                    color = if (isEnabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun StatusIndicator(state: ConnectionState) {

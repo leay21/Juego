@@ -84,17 +84,17 @@ fun GameScreen(
     val stats by reflexViewModel.stats.collectAsStateWithLifecycle()
     val saveFormat by settingsViewModel.saveFormat.collectAsState()
 
+    // --- ¡NUEVO! Obtener el modo seleccionado ---
+    val selectedGameMode by bluetoothViewModel.selectedGameMode.collectAsState()
+    // --------------------------------------------
+
     // ----------------------------------------------------
-    // !! AQUÍ ESTÁ LA MODIFICACIÓN !!
+    // !! ¡BLOQUE MODIFICADO! !!
     // ----------------------------------------------------
     LaunchedEffect(key1 = isHost) {
-        // Si esta instancia del composable es el Anfitrión...
         if (isHost) {
-            // ...¡inicia el juego!
-            // OJO: De momento, el modo está fijo (hardcoded) aquí.
-            // Más adelante, deberías permitir que el Anfitrión elija este modo
-            // en la pantalla MultiplayerLobbyScreen.
-            reflexViewModel.startGame(GameMode.CLASSIC)
+            // ¡Ahora usa el modo seleccionado!
+            reflexViewModel.startGame(selectedGameMode)
         }
     }
     // ----------------------------------------------------
@@ -268,13 +268,13 @@ private fun GameScreenLandscape(
     stats: GameStats,
     saveFormat: SaveFormat,
     onPlayer1Tap: () -> Unit,
-    onPlayer2Tap: () -> Unit,
-    onReset: () -> Unit,
-    onSave: () -> Unit,
-    onResume: () -> Unit,
-    onPause: () -> Unit,
-    onExit: () -> Unit,
-    enableControls: Boolean // ¡NUEVO!
+    onPlayer2Tap: ()L -> Unit,
+onReset: () -> Unit,
+onSave: () -> Unit,
+onResume: () -> Unit,
+onPause: () -> Unit,
+onExit: () -> Unit,
+enableControls: Boolean // ¡NUEVO!
 ) {
     Row(
         modifier = Modifier
@@ -376,11 +376,11 @@ fun GameControls(
     state: GameUiState,
     saveFormat: SaveFormat,
     onReset: () -> Unit,
-    onSave: () -> Unit,
-    onResume: () -> Unit,
-    onPause: () -> Unit,
-    onExit: () -> Unit,
-    enableControls: Boolean // ¡NUEVO!
+    onSave: ()D -> Unit,
+onResume: () -> Unit,
+onPause: () -> Unit,
+onExit: () -> Unit,
+enableControls: Boolean // ¡NUEVO!
 ) {
     // El cliente (no-autoridad) no puede Pausar, Guardar, Reiniciar o Reanudar.
     // Solo puede Salir.
