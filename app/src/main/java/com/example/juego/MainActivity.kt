@@ -1,11 +1,11 @@
 package com.example.juego
 
-import android.Manifest // ¡NUEVO!
-import android.os.Build // ¡NUEVO!
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts // ¡NUEVO!
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +19,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.juego.bt.BluetoothViewModel // ¡NUEVO IMPORT!
 import com.example.juego.ui.theme.JuegoTheme
 
 val LocalViewModelFactory = staticCompositionLocalOf<ViewModelProvider.Factory> {
@@ -28,32 +29,32 @@ class MainActivity : ComponentActivity() {
 
     private val viewModelFactory: AppViewModelFactory by lazy {
         val application = (application as ReflexApplication)
+        // ¡MODIFICADO! Pasamos el nuevo manager
         AppViewModelFactory(
             application.statsRepository,
             application.themeRepository,
             application.gameSaveRepository,
             application.soundManager,
-            application.savedGameMetadataDao
+            application.savedGameMetadataDao,
+            application.bluetoothConnectionManager // ¡NUEVO!
         )
     }
 
+    // Pedimos los ViewModels usando la fábrica
     private val reflexViewModel: ReflexViewModel by viewModels { viewModelFactory }
     private val settingsViewModel: SettingsViewModel by viewModels { viewModelFactory }
+    // ¡NUEVO! Creamos la instancia del BluetoothViewModel
+    private val bluetoothViewModel: BluetoothViewModel by viewModels { viewModelFactory }
 
-    // --- ¡NUEVA LÓGICA DE PERMISOS! ---
+
     private val requestBluetoothPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
-            perms.entries.forEach { (permission, isGranted) ->
-                // Aquí puedes manejar si el usuario denegó algún permiso
-                // Por ahora, solo lo solicitamos.
-            }
+            // ... (lógica de permisos)
         }
-    // ---------------------------------
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // --- ¡NUEVO! Solicitar permisos al crear ---
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             requestBluetoothPermissions.launch(
                 arrayOf(
@@ -63,7 +64,6 @@ class MainActivity : ComponentActivity() {
                 )
             )
         }
-        // -----------------------------------------
 
         setContent {
             val appTheme by settingsViewModel.appTheme.collectAsState()
@@ -100,6 +100,9 @@ class MainActivity : ComponentActivity() {
                                     reflexViewModel = reflexViewModel
                                 )
                             }
+                            // Próximamente añadiremos aquí las nuevas rutas
+                            // para la UI de multijugador, que usarán el
+                            // 'bluetoothViewModel'
                         }
                     }
                 }
