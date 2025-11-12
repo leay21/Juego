@@ -84,6 +84,22 @@ fun GameScreen(
     val stats by reflexViewModel.stats.collectAsStateWithLifecycle()
     val saveFormat by settingsViewModel.saveFormat.collectAsState()
 
+    // ----------------------------------------------------
+    // !! AQUÍ ESTÁ LA MODIFICACIÓN !!
+    // ----------------------------------------------------
+    LaunchedEffect(key1 = isHost) {
+        // Si esta instancia del composable es el Anfitrión...
+        if (isHost) {
+            // ...¡inicia el juego!
+            // OJO: De momento, el modo está fijo (hardcoded) aquí.
+            // Más adelante, deberías permitir que el Anfitrión elija este modo
+            // en la pantalla MultiplayerLobbyScreen.
+            reflexViewModel.startGame(GameMode.CLASSIC)
+        }
+    }
+    // ----------------------------------------------------
+
+
     // --- 4. Lógica de Comunicación Bluetooth ---
     LaunchedEffect(key1 = localUiState, key2 = isHost) {
         // ANFITRIÓN (Host): Si el estado local cambia, envíalo al cliente.
