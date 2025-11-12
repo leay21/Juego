@@ -93,7 +93,8 @@ class MainActivity : ComponentActivity() {
                                 GameScreen(
                                     navController = navController,
                                     reflexViewModel = reflexViewModel,
-                                    settingsViewModel = settingsViewModel
+                                    settingsViewModel = settingsViewModel,
+                                    bluetoothViewModel = bluetoothViewModel
                                 )
                             }
 

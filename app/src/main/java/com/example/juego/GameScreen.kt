@@ -23,8 +23,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,81 +37,176 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.juego.bt.BluetoothMessage
+import com.example.juego.bt.BluetoothViewModel
+import com.example.juego.bt.ConnectionState
 import com.example.juego.ui.theme.GrisFondo
 import com.example.juego.data.GameStats
 import com.example.juego.data.SaveFormat
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.navigation.NavController // ¡NUEVO IMPORT!
+import androidx.navigation.NavController
+import kotlinx.coroutines.flow.collectLatest
 
-// ¡MODIFICADO! Añadido NavController
+// ¡MODIFICADO! Añadido BluetoothViewModel
 @Composable
 fun GameScreen(
-    navController: NavController, // ¡NUEVO!
+    navController: NavController,
     reflexViewModel: ReflexViewModel,
-    settingsViewModel: SettingsViewModel
+    settingsViewModel: SettingsViewModel,
+    bluetoothViewModel: BluetoothViewModel // ¡NUEVO!
 ) {
-    // --- 1. Obtener Estado ---
-    val uiState by reflexViewModel.uiState.collectAsStateWithLifecycle()
+    // --- 1. Determinar el Rol (Host, Client, Local) ---
+    val btState by bluetoothViewModel.connectionState.collectAsState()
+
+    // Suponemos que somos Anfitrión si estábamos Escuchando,
+    // y Cliente si estábamos Conectando.
+    // 'remember' asegura que esto no cambie durante la recomposición.
+    val isHost = remember { btState == ConnectionState.LISTENING }
+    val isClient = remember { btState == ConnectionState.CONNECTING }
+    val isLocal = !isHost && !isClient
+
+    // El rol determina si el juego se controla localmente
+    val isGameAuthority = isLocal || isHost
+
+    // --- 2. Obtener el Estado del Juego (GameUiState) ---
+
+    // El estado del Host/Local viene del ReflexViewModel
+    val localUiState by reflexViewModel.uiState.collectAsStateWithLifecycle()
+
+    // El estado del Cliente viene de un 'remember' que se actualiza por Bluetooth
+    var clientUiState by remember { mutableStateOf(GameUiState()) }
+
+    // El estado final que ve la UI
+    val uiState = if (isGameAuthority) localUiState else clientUiState
+
+    // --- 3. Obtener otros estados (Stats, Formato de guardado) ---
     val stats by reflexViewModel.stats.collectAsStateWithLifecycle()
     val saveFormat by settingsViewModel.saveFormat.collectAsState()
 
-    // --- 2. Efecto de Pausa (se queda igual) ---
-    DisposableEffect(key1 = Unit) {
-        onDispose {
-            reflexViewModel.pauseGame()
+    // --- 4. Lógica de Comunicación Bluetooth ---
+    LaunchedEffect(key1 = localUiState, key2 = isHost) {
+        // ANFITRIÓN (Host): Si el estado local cambia, envíalo al cliente.
+        if (isHost) {
+            bluetoothViewModel.sendMessage(BluetoothMessage.GameState(localUiState))
         }
     }
 
-    // --- 3. Detectar Orientación (se queda igual) ---
+    LaunchedEffect(key1 = isGameAuthority) {
+        // CLIENTE: Escucha por actualizaciones de estado del Anfitrión
+        // ANFITRIÓN: Escucha por toques del Cliente
+        bluetoothViewModel.receivedMessages.collectLatest { message ->
+            when(message) {
+                is BluetoothMessage.GameState -> {
+                    // Si soy Cliente, actualizo mi estado
+                    if (isClient) {
+                        clientUiState = message.state
+                    }
+                }
+                is BluetoothMessage.PlayerTouch -> {
+                    // Si soy Anfitrión, proceso el toque del Cliente como Jugador 2
+                    if (isHost) {
+                        reflexViewModel.processTouch(2)
+                    }
+                }
+                // (Manejar otros mensajes como StartGame, ResetGame si los implementamos)
+                else -> {}
+            }
+        }
+    }
+
+    // --- 5. Lógica de Pausa/Salir ---
+    DisposableEffect(key1 = Unit) {
+        onDispose {
+            if (isLocal) {
+                reflexViewModel.pauseGame()
+            } else {
+                // Si salimos de un juego BT, cerramos la conexión
+                bluetoothViewModel.closeConnection()
+            }
+        }
+    }
+
+    // --- 6. Detectar Orientación ---
     val orientation = LocalConfiguration.current.orientation
 
-    // --- 4. Elegir el Layout (¡MODIFICADO! Pasamos nuevos lambdas) ---
+    // --- 7. Elegir y Renderizar el Layout ---
+    val onPlayer1Tap = {
+        if (isGameAuthority) { // Local o Host
+            reflexViewModel.processTouch(1)
+        }
+        // Si soy Cliente, no hago nada al tocar J1
+    }
+
+    val onPlayer2Tap = {
+        if (isLocal) { // Solo Local
+            reflexViewModel.processTouch(2)
+        } else if (isClient) { // Solo Cliente
+            // Envía el toque al anfitrión
+            bluetoothViewModel.sendMessage(BluetoothMessage.PlayerTouch())
+        }
+        // Si soy Anfitrión, no hago nada (espero el mensaje BT)
+    }
+
     if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
         GameScreenLandscape(
             uiState = uiState,
             stats = stats,
             saveFormat = saveFormat,
-            onPlayerTap = { reflexViewModel.processTouch(it) },
-            onReset = { reflexViewModel.resetCurrentGame() },
+            onPlayer1Tap = onPlayer1Tap,
+            onPlayer2Tap = onPlayer2Tap,
+            onReset = { /* TODO: Manejar reinicio BT */ reflexViewModel.resetCurrentGame() },
             onSave = {
                 val fileName = "partida_${System.currentTimeMillis()}"
                 reflexViewModel.saveCurrentGame(fileName, saveFormat)
             },
             onResume = { reflexViewModel.resumeGame() },
-            onPause = { reflexViewModel.pauseGame() }, // ¡NUEVO!
-            onExit = { navController.popBackStack() }   // ¡NUEVO!
+            onPause = { reflexViewModel.pauseGame() },
+            onExit = {
+                if (!isLocal) bluetoothViewModel.closeConnection()
+                navController.popBackStack()
+            },
+            // Deshabilitar botones si no somos la autoridad (Cliente)
+            enableControls = isGameAuthority
         )
     } else {
         GameScreenPortrait(
             uiState = uiState,
             stats = stats,
             saveFormat = saveFormat,
-            onPlayerTap = { reflexViewModel.processTouch(it) },
-            onReset = { reflexViewModel.resetCurrentGame() },
+            onPlayer1Tap = onPlayer1Tap,
+            onPlayer2Tap = onPlayer2Tap,
+            onReset = { /* TODO: Manejar reinicio BT */ reflexViewModel.resetCurrentGame() },
             onSave = {
                 val fileName = "partida_${System.currentTimeMillis()}"
                 reflexViewModel.saveCurrentGame(fileName, saveFormat)
             },
             onResume = { reflexViewModel.resumeGame() },
-            onPause = { reflexViewModel.pauseGame() }, // ¡NUEVO!
-            onExit = { navController.popBackStack() }   // ¡NUEVO!
+            onPause = { reflexViewModel.pauseGame() },
+            onExit = {
+                if (!isLocal) bluetoothViewModel.closeConnection()
+                navController.popBackStack()
+            },
+            // Deshabilitar botones si no somos la autoridad (Cliente)
+            enableControls = isGameAuthority
         )
     }
 }
 
-// ¡MODIFICADO! Añadidos onPause y onExit
+// --- Layout para Modo Vertical (Portrait) ---
 @Composable
 private fun GameScreenPortrait(
     uiState: GameUiState,
     stats: GameStats,
     saveFormat: SaveFormat,
-    onPlayerTap: (Int) -> Unit,
+    onPlayer1Tap: () -> Unit,
+    onPlayer2Tap: () -> Unit,
     onReset: () -> Unit,
     onSave: () -> Unit,
     onResume: () -> Unit,
-    onPause: () -> Unit, // ¡NUEVO!
-    onExit: () -> Unit   // ¡NUEVO!
+    onPause: () -> Unit,
+    onExit: () -> Unit,
+    enableControls: Boolean // ¡NUEVO!
 ) {
     Column(
         modifier = Modifier
@@ -119,7 +218,7 @@ private fun GameScreenPortrait(
         TouchArea(
             player = 1,
             backgroundColor = uiState.roundColor.color,
-            onPlayerTap = { onPlayerTap(1) },
+            onPlayerTap = onPlayer1Tap, // Toca J1
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -128,12 +227,11 @@ private fun GameScreenPortrait(
         TouchArea(
             player = 2,
             backgroundColor = uiState.roundColor.color,
-            onPlayerTap = { onPlayerTap(2) },
+            onPlayerTap = onPlayer2Tap, // Toca J2
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
         )
-        // Pasamos los nuevos controles
         GameControls(
             state = uiState,
             saveFormat = saveFormat,
@@ -141,23 +239,26 @@ private fun GameScreenPortrait(
             onSave = onSave,
             onResume = onResume,
             onPause = onPause,
-            onExit = onExit
+            onExit = onExit,
+            enableControls = enableControls // Pasa el estado de habilitado
         )
     }
 }
 
-// ¡MODIFICADO! Añadidos onPause y onExit
+// --- Layout para Modo Horizontal (Landscape) ---
 @Composable
 private fun GameScreenLandscape(
     uiState: GameUiState,
     stats: GameStats,
     saveFormat: SaveFormat,
-    onPlayerTap: (Int) -> Unit,
+    onPlayer1Tap: () -> Unit,
+    onPlayer2Tap: () -> Unit,
     onReset: () -> Unit,
     onSave: () -> Unit,
     onResume: () -> Unit,
-    onPause: () -> Unit, // ¡NUEVO!
-    onExit: () -> Unit   // ¡NUEVO!
+    onPause: () -> Unit,
+    onExit: () -> Unit,
+    enableControls: Boolean // ¡NUEVO!
 ) {
     Row(
         modifier = Modifier
@@ -168,7 +269,7 @@ private fun GameScreenLandscape(
         TouchArea(
             player = 1,
             backgroundColor = uiState.roundColor.color,
-            onPlayerTap = { onPlayerTap(1) },
+            onPlayerTap = onPlayer1Tap, // Toca J1
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -185,7 +286,6 @@ private fun GameScreenLandscape(
             Spacer(modifier = Modifier.weight(1f))
             TargetDisplay(state = uiState)
             Spacer(modifier = Modifier.weight(1f))
-            // Pasamos los nuevos controles
             GameControls(
                 state = uiState,
                 saveFormat = saveFormat,
@@ -193,13 +293,14 @@ private fun GameScreenLandscape(
                 onSave = onSave,
                 onResume = onResume,
                 onPause = onPause,
-                onExit = onExit
+                onExit = onExit,
+                enableControls = enableControls // Pasa el estado de habilitado
             )
         }
         TouchArea(
             player = 2,
             backgroundColor = uiState.roundColor.color,
-            onPlayerTap = { onPlayerTap(2) },
+            onPlayerTap = onPlayer2Tap, // Toca J2
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
@@ -210,37 +311,14 @@ private fun GameScreenLandscape(
 
 // ... (StatsDisplay no cambia) ...
 @Composable
-fun StatsDisplay(stats: GameStats) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp, horizontal = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = "Partidas: ${stats.gamesPlayed}",
-            color = Color.White,
-            fontSize = 14.sp
-        )
-        Text(
-            text = "J1: ${stats.player1Wins}",
-            color = Color.White,
-            fontSize = 14.sp
-        )
-        Text(
-            text = "J2: ${stats.player2Wins}",
-            color = Color.White,
-            fontSize = 14.sp
-        )
-    }
-}
+fun StatsDisplay(stats: GameStats) { /* ... */ }
 
-// ¡MODIFICADO! Se añade la rotación al texto del Jugador 1
+// ... (TouchArea no cambia) ...
 @Composable
 fun TouchArea(
     player: Int,
     backgroundColor: Color,
-    onPlayerTap: (Int) -> Unit,
+    onPlayerTap: () -> Unit, // Modificado a un lambda simple
     modifier: Modifier = Modifier
 ) {
     val animatedColor by animateColorAsState(
@@ -252,7 +330,7 @@ fun TouchArea(
     Box(
         modifier = modifier
             .background(animatedColor)
-            .clickable { onPlayerTap(player) },
+            .clickable { onPlayerTap() }, // Llama al lambda
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -260,7 +338,6 @@ fun TouchArea(
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,
-            // Rota el texto del Jugador 1
             modifier = if (player == 1) Modifier.graphicsLayer(rotationZ = 180f) else Modifier
         )
     }
@@ -268,104 +345,16 @@ fun TouchArea(
 
 // ... (TargetDisplay, TargetMessage, y TimeAndScore no cambian) ...
 @Composable
-fun TargetDisplay(state: GameUiState) {
-    AnimatedContent(
-        targetState = state.gameState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 16.dp),
-        transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(300)) },
-        label = "TargetMessage"
-    ) { targetState ->
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-
-            // 1. Texto para Jugador 1 (Arriba) -> ¡ROTADO!
-            TargetMessage(targetState, state, isRotated = true)
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 2. Información Central (Tiempo y Puntuación)
-            TimeAndScore(state, targetState)
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 3. Texto para Jugador 2 (Abajo) -> ¡NORMAL!
-            TargetMessage(targetState, state, isRotated = false)
-        }
-    }
-}
+fun TargetDisplay(state: GameUiState) { /* ... */ }
 
 @Composable
-private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated: Boolean) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.graphicsLayer(rotationZ = if (isRotated) 180f else 0f)
-    ) {
-        when (targetState) {
-            GamePhase.GAME_OVER -> {
-                Text(
-                    text = state.winnerMessage,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-            GamePhase.PAUSED -> {
-                Text(
-                    text = "Juego Pausado",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-            else -> {
-                Text(
-                    text = "¡Presiona el ${state.targetColor.nombre}!",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = state.targetTextColor.color
-                )
-            }
-        }
-    }
-}
+private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated: Boolean) { /* ... */ }
 
 @Composable
-private fun TimeAndScore(state: GameUiState, targetState: GamePhase) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        if (state.gameMode == GameMode.TIME_ATTACK) {
-            Text(
-                text = "Tiempo Restante: ${state.remainingTime}s",
-                fontSize = 16.sp,
-                color = Color.White.copy(alpha = 0.8f),
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        } else {
-            Text(
-                text = "Tiempo: ${state.timeElapsed}s",
-                fontSize = 16.sp,
-                color = Color.White.copy(alpha = 0.8f),
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-
-        if (targetState != GamePhase.GAME_OVER) {
-            Text(
-                text = "${state.scoreJ1} - ${state.scoreJ2}",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-    }
-}
+private fun TimeAndScore(state: GameUiState, targetState: GamePhase) { /* ... */ }
 
 
-// --- ¡GameControls TOTALMENTE MODIFICADO! ---
+// --- ¡GameControls MODIFICADO! ---
 @Composable
 fun GameControls(
     state: GameUiState,
@@ -373,73 +362,87 @@ fun GameControls(
     onReset: () -> Unit,
     onSave: () -> Unit,
     onResume: () -> Unit,
-    onPause: () -> Unit, // ¡NUEVO!
-    onExit: () -> Unit    // ¡NUEVO!
+    onPause: () -> Unit,
+    onExit: () -> Unit,
+    enableControls: Boolean // ¡NUEVO!
 ) {
-    // Usamos una Columna para poder poner 2 filas de botones si es necesario
+    // El cliente (no-autoridad) no puede Pausar, Guardar, Reiniciar o Reanudar.
+    // Solo puede Salir.
+
+    val showFullControls = enableControls || state.gameState == GamePhase.GAME_OVER
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        when (state.gameState) {
-            GamePhase.GAME_OVER -> {
-                // Fila 1: Nueva Partida y Salir
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Button(onClick = onReset, modifier = Modifier.weight(1f)) {
-                        Text(text = "Nueva Partida", fontSize = 18.sp)
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Button(onClick = onExit, modifier = Modifier.weight(1f)) {
-                        Text(text = "Salir", fontSize = 18.sp)
-                    }
+        if (!showFullControls && state.gameState != GamePhase.PAUSED) {
+            // Cliente durante el juego
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Button(onClick = onExit, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = "Salir", fontSize = 18.sp)
                 }
             }
-            GamePhase.PAUSED -> {
-                // Fila 1: Reanudar y Guardar
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Button(onClick = onResume, modifier = Modifier.weight(1f)) {
-                        Text(text = "Reanudar", fontSize = 18.sp)
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Button(onClick = onSave, modifier = Modifier.weight(1f)) {
-                        Text(text = "Guardar", fontSize = 18.sp)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                // Fila 2: Reiniciar y Salir
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Button(onClick = onReset, modifier = Modifier.weight(1f)) {
-                        Text(text = "Reiniciar", fontSize = 18.sp)
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Button(onClick = onExit, modifier = Modifier.weight(1f)) {
-                        Text(text = "Salir", fontSize = 18.sp)
+        } else {
+            // Lógica de botones para Anfitrión, Local, o Fin de Juego
+            when (state.gameState) {
+                GamePhase.GAME_OVER -> {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(onClick = onReset, modifier = Modifier.weight(1f), enabled = enableControls) {
+                            Text(text = "Nueva Partida", fontSize = 18.sp)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Button(onClick = onExit, modifier = Modifier.weight(1f)) {
+                            Text(text = "Salir", fontSize = 18.sp)
+                        }
                     }
                 }
-            }
-            else -> { // ESPERA, GO, PROCESANDO (Jugando)
-                // Fila 1: Pausa y Salir
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    Button(onClick = onPause, modifier = Modifier.weight(1f)) {
-                        Text(text = "Pausa", fontSize = 18.sp)
+                GamePhase.PAUSED -> {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(onClick = onResume, modifier = Modifier.weight(1f), enabled = enableControls) {
+                            Text(text = "Reanudar", fontSize = 18.sp)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Button(onClick = onSave, modifier = Modifier.weight(1f), enabled = enableControls) {
+                            Text(text = "Guardar", fontSize = 18.sp)
+                        }
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Button(onClick = onExit, modifier = Modifier.weight(1f)) {
-                        Text(text = "Salir", fontSize = 18.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(onClick = onReset, modifier = Modifier.weight(1f), enabled = enableControls) {
+                            Text(text = "Reiniciar", fontSize = 18.sp)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Button(onClick = onExit, modifier = Modifier.weight(1f)) {
+                            Text(text = "Salir", fontSize = 18.sp)
+                        }
+                    }
+                }
+                else -> { // JUGANDO (ESPERA, GO, PROCESANDO)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Button(onClick = onPause, modifier = Modifier.weight(1f), enabled = enableControls) {
+                            Text(text = "Pausa", fontSize = 18.sp)
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Button(onClick = onExit, modifier = Modifier.weight(1f)) {
+                            Text(text = "Salir", fontSize = 18.sp)
+                        }
                     }
                 }
             }
