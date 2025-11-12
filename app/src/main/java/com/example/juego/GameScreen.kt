@@ -36,10 +36,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.juego.ui.theme.GrisFondo
 import com.example.juego.data.GameStats
 import com.example.juego.data.SaveFormat
-import androidx.compose.foundation.layout.height // ¡NUEVO IMPORT!
-import androidx.compose.ui.graphics.graphicsLayer // ¡NUEVO IMPORT!
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.graphics.graphicsLayer
 
-// ¡FUNCIÓN PRINCIPAL MODIFICADA!
 @Composable
 fun GameScreen(
     reflexViewModel: ReflexViewModel,
@@ -50,19 +49,18 @@ fun GameScreen(
     val stats by reflexViewModel.stats.collectAsStateWithLifecycle()
     val saveFormat by settingsViewModel.saveFormat.collectAsState()
 
-    // --- 2. Efecto de Pausa (de la última vez) ---
+    // --- 2. Efecto de Pausa ---
     DisposableEffect(key1 = Unit) {
         onDispose {
             reflexViewModel.pauseGame()
         }
     }
 
-    // --- 3. ¡NUEVO! Detectar Orientación ---
+    // --- 3. Detectar Orientación ---
     val orientation = LocalConfiguration.current.orientation
 
     // --- 4. Elegir el Layout ---
     if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-        // Si es horizontal, usa el layout en Fila (Row)
         GameScreenLandscape(
             uiState = uiState,
             stats = stats,
@@ -76,7 +74,6 @@ fun GameScreen(
             onResume = { reflexViewModel.resumeGame() }
         )
     } else {
-        // Si es vertical, usa el layout en Columna (Column)
         GameScreenPortrait(
             uiState = uiState,
             stats = stats,
@@ -92,7 +89,7 @@ fun GameScreen(
     }
 }
 
-// --- ¡NUEVO! Layout para Modo Vertical (Portrait) ---
+// --- Layout para Modo Vertical (Portrait) ---
 @Composable
 private fun GameScreenPortrait(
     uiState: GameUiState,
@@ -110,7 +107,7 @@ private fun GameScreenPortrait(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         StatsDisplay(stats = stats)
-        // Área Jugador 1
+        // Área Jugador 1 (Arriba)
         TouchArea(
             player = 1,
             backgroundColor = uiState.roundColor.color,
@@ -119,8 +116,8 @@ private fun GameScreenPortrait(
                 .weight(1f)
                 .fillMaxWidth()
         )
-        // ¡MODIFICADO! TargetDisplay ahora se ajusta a su contenido
         TargetDisplay(state = uiState)
+        // Área Jugador 2 (Abajo)
         TouchArea(
             player = 2,
             backgroundColor = uiState.roundColor.color,
@@ -129,7 +126,6 @@ private fun GameScreenPortrait(
                 .weight(1f)
                 .fillMaxWidth()
         )
-        // Controles
         GameControls(
             state = uiState,
             saveFormat = saveFormat,
@@ -140,7 +136,7 @@ private fun GameScreenPortrait(
     }
 }
 
-// --- ¡NUEVO! Layout para Modo Horizontal (Landscape) ---
+// --- Layout para Modo Horizontal (Landscape) ---
 @Composable
 private fun GameScreenLandscape(
     uiState: GameUiState,
@@ -164,19 +160,18 @@ private fun GameScreenLandscape(
             onPlayerTap = { onPlayerTap(1) },
             modifier = Modifier
                 .weight(1f)
-                .fillMaxHeight() // Ocupa toda la altura
+                .fillMaxHeight()
         )
         // Área Central (Columna)
         Column(
             modifier = Modifier
-                .weight(1.5f) // Más peso para el centro
+                .weight(1.5f)
                 .fillMaxHeight()
                 .padding(horizontal = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center // Centrado verticalmente
+            verticalArrangement = Arrangement.Center
         ) {
             StatsDisplay(stats = stats)
-            // ¡MODIFICADO! Usamos un Spacer con peso para centrar
             Spacer(modifier = Modifier.weight(1f))
             TargetDisplay(state = uiState)
             Spacer(modifier = Modifier.weight(1f))
@@ -195,13 +190,13 @@ private fun GameScreenLandscape(
             onPlayerTap = { onPlayerTap(2) },
             modifier = Modifier
                 .weight(1f)
-                .fillMaxHeight() // Ocupa toda la altura
+                .fillMaxHeight()
         )
     }
 }
 
 
-// --- COMPOSABLES REUTILIZABLES (Sin cambios) ---
+// --- COMPOSABLES REUTILIZABLES ---
 
 @Composable
 fun StatsDisplay(stats: GameStats) {
@@ -252,19 +247,19 @@ fun TouchArea(
             text = "JUGADOR $player",
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White
+            color = Color.White,
+            modifier = if (player == 1) Modifier.graphicsLayer(rotationZ = 180f) else Modifier
         )
     }
 }
 
-// --- ¡TargetDisplay TOTALMENTE MODIFICADO! ---
+// --- ¡TargetDisplay CORREGIDO! ---
 @Composable
 fun TargetDisplay(state: GameUiState) {
     AnimatedContent(
         targetState = state.gameState,
         modifier = Modifier
             .fillMaxWidth()
-            // ¡MODIFICADO! El padding se aplica dentro
             .padding(vertical = 16.dp),
         transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(300)) },
         label = "TargetMessage"
@@ -274,8 +269,9 @@ fun TargetDisplay(state: GameUiState) {
             modifier = Modifier.fillMaxWidth()
         ) {
 
-            // 1. Texto para Jugador 1 (Normal)
-            TargetMessage(targetState, state, isRotated = false)
+            // --- ¡CORREGIDO! ---
+            // 1. Texto para Jugador 1 (Arriba) -> ¡ROTADO!
+            TargetMessage(targetState, state, isRotated = true)
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -284,17 +280,17 @@ fun TargetDisplay(state: GameUiState) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 3. Texto para Jugador 2 (Invertido)
-            TargetMessage(targetState, state, isRotated = true)
+            // --- ¡CORREGIDO! ---
+            // 3. Texto para Jugador 2 (Abajo) -> ¡NORMAL!
+            TargetMessage(targetState, state, isRotated = false)
         }
     }
 }
 
-// --- ¡NUEVO HELPER COMPOSABLE! ---
 // Muestra el mensaje de estado (Ganador, Pausa o Color Objetivo)
 @Composable
 private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated: Boolean) {
-    // Rota toda la columna 180 grados si es para el Jugador 2
+    // Rota toda la columna 180 grados si es necesario
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.graphicsLayer(rotationZ = if (isRotated) 180f else 0f)
@@ -317,19 +313,17 @@ private fun TargetMessage(targetState: GamePhase, state: GameUiState, isRotated:
                 )
             }
             else -> {
-                // Texto del color objetivo
                 Text(
                     text = "¡Presiona el ${state.targetColor.nombre}!",
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
-                    color = state.targetTextColor.color // Usa el color (posiblemente de confusión)
+                    color = state.targetTextColor.color
                 )
             }
         }
     }
 }
 
-// --- ¡NUEVO HELPER COMPOSABLE! ---
 // Muestra el tiempo y la puntuación (nunca se rota)
 @Composable
 private fun TimeAndScore(state: GameUiState, targetState: GamePhase) {
