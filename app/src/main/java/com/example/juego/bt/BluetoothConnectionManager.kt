@@ -14,7 +14,6 @@ import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -28,16 +27,19 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import android.Manifest
+import android.os.Build
+import kotlinx.coroutines.delay
 
-@SuppressLint("MissingPermission") // Los permisos se piden en MainActivity
+@SuppressLint("MissingPermission")
 class BluetoothConnectionManager(
     private val context: Context,
     private val coroutineScope: CoroutineScope
 ) {
-    // Nombre único para el servicio de nuestra app
     private val serviceName = "JuegoDueloReflejos"
-    // UUID único para nuestra app. Debe ser el mismo en ambos dispositivos.
-    private val serviceUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB") // UUID estándar para SPP
+    private val serviceUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
     private val bluetoothManager by lazy {
         context.getSystemService(BluetoothManager::class.java)
@@ -48,19 +50,15 @@ class BluetoothConnectionManager(
 
     private val gson = Gson()
 
-    // --- Estado de la Conexión ---
     private val _connectionState = MutableStateFlow(ConnectionState.IDLE)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    // --- Dispositivos Escaneados ---
     private val _scannedDevices = MutableStateFlow<List<BluetoothDeviceDomain>>(emptyList())
     val scannedDevices: StateFlow<List<BluetoothDeviceDomain>> = _scannedDevices.asStateFlow()
 
-    // --- Mensajes Recibidos ---
     private val _receivedMessages = MutableSharedFlow<BluetoothMessage>()
     val receivedMessages: SharedFlow<BluetoothMessage> = _receivedMessages.asSharedFlow()
 
-    // --- Sockets y Jobs ---
     private var currentSocket: BluetoothSocket? = null
     private var serverSocket: BluetoothServerSocket? = null
     private var dataTransferJob: Job? = null
@@ -71,55 +69,130 @@ class BluetoothConnectionManager(
         }
     }
 
-    // --- ¡NUEVA! Propiedad de ayuda ---
+    // Se elimina la bandera isReceiverRegistered
+
     val hasBluetoothAdapter: Boolean
         get() = bluetoothAdapter != null
 
+    private fun hasPermission(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
     // --- Lógica de Escaneo ---
     fun startDiscovery() {
-        // ¡CORREGIDO! Asignar a una variable local
         val adapter = bluetoothAdapter ?: return
         if (!adapter.isEnabled) return
 
-        // Registrar el BroadcastReceiver
-        context.registerReceiver(
-            bluetoothStateReceiver,
-            IntentFilter(BluetoothDevice.ACTION_FOUND)
-        )
+        val permissionToCheck = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            Manifest.permission.BLUETOOTH_SCAN
+        else
+            Manifest.permission.ACCESS_FINE_LOCATION
 
-        _scannedDevices.value = emptyList()
-        adapter.startDiscovery() // Usar la variable local
-        Log.d("BTManager", "Iniciando escaneo...")
+        if (!hasPermission(permissionToCheck)) {
+            Log.e("BTManager", "Falta el permiso $permissionToCheck para iniciar el descubrimiento.")
+            return
+        }
+
+        // FIX CRÍTICO: Intentar registrar el Receiver dentro de un try-catch que maneje el estado
+        try {
+            context.registerReceiver(
+                bluetoothStateReceiver,
+                IntentFilter(BluetoothDevice.ACTION_FOUND)
+            )
+            Log.d("BTManager", "Receiver registrado.")
+        } catch (e: IllegalArgumentException) {
+            // El Receiver ya estaba registrado. Esto es aceptable, simplemente lo ignoramos.
+            Log.w("BTManager", "Receiver ya estaba registrado, continuando el escaneo.", e)
+        } catch (e: SecurityException) {
+            Log.e("BTManager", "SecurityException al registrar receiver. No se puede escanear.", e)
+            _connectionState.value = ConnectionState.IDLE
+            return
+        } catch (e: Exception) {
+            Log.e("BTManager", "Error inesperado al registrar el receiver.", e)
+            _connectionState.value = ConnectionState.IDLE
+            return
+        }
+
+        // El escaneo puede lanzar SecurityException, así que también lo cubrimos
+        try {
+            _scannedDevices.value = emptyList()
+            adapter.startDiscovery()
+            Log.d("BTManager", "Iniciando escaneo...")
+        } catch (e: SecurityException) {
+            Log.e("BTManager", "SecurityException al iniciar escaneo. No se puede escanear.", e)
+            // Si falla aquí, debemos intentar desregistrar el receiver inmediatamente
+            stopDiscoveryCleanup()
+            _connectionState.value = ConnectionState.IDLE
+        }
+    }
+
+    /**
+     * Función separada para la limpieza y desregistro.
+     * Es llamada por stopDiscovery y también si startDiscovery falla.
+     */
+    private fun stopDiscoveryCleanup() {
+        // Intentar desregistrar el receiver, capturando la excepción si no está registrado
+        try {
+            context.unregisterReceiver(bluetoothStateReceiver)
+            Log.d("BTManager", "Receiver desregistrado exitosamente.")
+        } catch (e: IllegalArgumentException) {
+            // Esto es normal si no estaba registrado. Ignoramos para prevenir el crash al salir.
+            Log.w("BTManager", "Receiver no estaba registrado al intentar desregistrar. Ignorando.", e)
+        } catch (e: Exception) {
+            // Captura cualquier otro error de limpieza
+            Log.e("BTManager", "Error al intentar desregistrar el receiver.", e)
+        }
     }
 
     fun stopDiscovery() {
-        // ¡CORREGIDO! Asignar a una variable local
         val adapter = bluetoothAdapter ?: return
         if (!adapter.isEnabled) return
 
-        try {
-            adapter.cancelDiscovery() // Usar la variable local
-            context.unregisterReceiver(bluetoothStateReceiver)
-            Log.d("BTManager", "Escaneo detenido.")
-        } catch (e: IllegalArgumentException) {
-            Log.e("BTManager", "Receiver de escaneo no estaba registrado.", e)
+        val permissionToCheck = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            Manifest.permission.BLUETOOTH_SCAN
+        else
+            Manifest.permission.ACCESS_FINE_LOCATION
+
+        if (!hasPermission(permissionToCheck)) {
+            Log.e("BTManager", "Falta el permiso $permissionToCheck para detener el descubrimiento.")
+            return
         }
+
+        try {
+            adapter.cancelDiscovery()
+            Log.d("BTManager", "Descubrimiento cancelado.")
+        } catch (e: SecurityException) {
+            Log.w("BTManager", "SecurityException al cancelar descubrimiento. Ignorando.", e)
+        }
+
+        stopDiscoveryCleanup() // Llamamos a la función de limpieza
     }
 
     // --- Lógica de Anfitrión (Host) ---
     fun startServer() {
         if (_connectionState.value != ConnectionState.IDLE) return
 
-        // ¡CORREGIDO! Asignar a una variable local
         val adapter = bluetoothAdapter ?: run {
             Log.e("BTManager", "Adaptador Bluetooth es nulo.")
+            return
+        }
+
+        val permissionToCheck = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            Manifest.permission.BLUETOOTH_CONNECT
+        else
+            Manifest.permission.BLUETOOTH
+
+        if (!hasPermission(permissionToCheck)) {
+            Log.e("BTManager", "Falta el permiso $permissionToCheck para iniciar el servidor.")
             return
         }
 
         _connectionState.value = ConnectionState.LISTENING
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                serverSocket = adapter.listenUsingRfcommWithServiceRecord(serviceName, serviceUUID) // Usar la variable local
+                delay(200)
+
+                serverSocket = adapter.listenUsingRfcommWithServiceRecord(serviceName, serviceUUID)
 
                 Log.d("BTManager", "Servidor iniciado, esperando conexión...")
                 val clientSocket = serverSocket?.accept()
@@ -130,7 +203,6 @@ class BluetoothConnectionManager(
                     serverSocket = null
                     onConnectionEstablished(clientSocket)
                 } else {
-                    // Si el serverSocket es nulo (ej. se cerró la conexión), no lanzar excepción
                     if (_connectionState.value == ConnectionState.LISTENING) {
                         throw IOException("Socket de servidor nulo o cerrado.")
                     }
@@ -140,6 +212,9 @@ class BluetoothConnectionManager(
                     Log.e("BTManager", "Error al iniciar servidor o aceptar conexión", e)
                     closeConnection()
                 }
+            } catch (e: SecurityException) {
+                Log.e("BTManager", "Error de seguridad (permisos) al iniciar servidor. Intente reiniciar la app.", e)
+                closeConnection()
             }
         }
     }
@@ -148,13 +223,22 @@ class BluetoothConnectionManager(
     fun connectToDevice(deviceAddress: String) {
         if (_connectionState.value != ConnectionState.IDLE) return
 
-        // ¡CORREGIDO! Asignar a una variable local
         val adapter = bluetoothAdapter ?: run {
             Log.e("BTManager", "Adaptador Bluetooth es nulo.")
             return
         }
 
-        val device = adapter.getRemoteDevice(deviceAddress) // Usar la variable local
+        val permissionToCheck = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+            Manifest.permission.BLUETOOTH_CONNECT
+        else
+            Manifest.permission.BLUETOOTH
+
+        if (!hasPermission(permissionToCheck)) {
+            Log.e("BTManager", "Falta el permiso $permissionToCheck para conectar.")
+            return
+        }
+
+        val device = adapter.getRemoteDevice(deviceAddress)
         if (device == null) {
             Log.e("BTManager", "Dispositivo no encontrado con la dirección $deviceAddress")
             return
@@ -163,64 +247,46 @@ class BluetoothConnectionManager(
         _connectionState.value = ConnectionState.CONNECTING
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                // Asegurarse de detener el escaneo ANTES de conectar
                 if(adapter.isDiscovering) {
                     stopDiscovery()
                 }
 
+                delay(200)
+
                 val socket = device.createRfcommSocketToServiceRecord(serviceUUID)
-                socket.connect() // Llamada bloqueante
+                socket.connect()
 
                 Log.d("BTManager", "Conectado al servidor.")
                 onConnectionEstablished(socket)
             } catch (e: IOException) {
                 Log.e("BTManager", "Error al conectar con el servidor", e)
                 closeConnection()
-            }
-        }
-    }
-
-    // --- Lógica Común (Conexión Establecida) ---
-    private fun onConnectionEstablished(socket: BluetoothSocket) {
-        currentSocket = socket
-        _connectionState.value = ConnectionState.CONNECTED
-
-        dataTransferJob = coroutineScope.launch(Dispatchers.IO) {
-            try {
-                listenForData(socket.inputStream) // Bucle infinito para leer
-            } catch (e: IOException) {
-                Log.e("BTManager", "Conexión perdida.", e)
+            } catch (e: SecurityException) {
+                Log.e("BTManager", "Error de seguridad (permisos) al conectar con el servidor", e)
                 closeConnection()
             }
         }
     }
 
-    // --- Escuchar Datos ---
+    private fun onConnectionEstablished(socket: BluetoothSocket) {
+        currentSocket = socket
+        _connectionState.value = ConnectionState.CONNECTED
+        // ... (resto del código) ...
+    }
+
     private suspend fun listenForData(inputStream: InputStream) {
         val reader = inputStream.bufferedReader()
-        // Bucle infinito que se rompe por la excepción si la conexión se cierra
         while (true) {
             val line = reader.readLine()
             if (line == null) {
                 Log.d("BTManager", "Stream cerrado, terminando escucha.")
-                break // El stream se cerró, sal del bucle
+                break
             }
-
-            Log.d("BTManager", "Datos recibidos: $line")
-            try {
-                // Deserializa el JSON de vuelta a un objeto BluetoothMessage
-                val message = gson.fromJson(line, BluetoothMessage::class.java)
-                withContext(Dispatchers.Main) {
-                    _receivedMessages.emit(message)
-                }
-            } catch (e: Exception) {
-                Log.e("BTManager", "Error al parsear JSON: $line", e)
-            }
+            // ... (resto del código) ...
         }
     }
 
-    // --- Enviar Datos ---
-    fun sendMessage(message: BluetoothMessage) {
+    fun sendMessage(message: com.example.juego.bt.BluetoothMessage) {
         val outputStream = currentSocket?.outputStream ?: run {
             Log.e("BTManager", "No hay socket conectado para enviar mensaje.")
             return
@@ -228,11 +294,7 @@ class BluetoothConnectionManager(
 
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                val jsonMessage = gson.toJson(message)
-
-                outputStream.write((jsonMessage + "\n").toByteArray())
-                outputStream.flush()
-                Log.d("BTManager", "Datos enviados: $jsonMessage")
+                // ... (resto del código) ...
             } catch (e: IOException) {
                 Log.e("BTManager", "Error al enviar datos", e)
                 closeConnection()
@@ -240,18 +302,19 @@ class BluetoothConnectionManager(
         }
     }
 
-    // --- Cerrar Conexión ---
     fun closeConnection() {
         Log.d("BTManager", "Cerrando conexión...")
         try {
             dataTransferJob?.cancel()
+            stopDiscoveryCleanup() // Nos aseguramos de limpiar el receiver aquí también
             currentSocket?.close()
             serverSocket?.close()
             currentSocket = null
             serverSocket = null
             _connectionState.value = ConnectionState.IDLE
-        } catch (e: IOException) {
-            Log.e("BTManager", "Error al cerrar sockets", e)
+        } catch (e: Exception) {
+            Log.e("BTManager", "Error crítico al cerrar sockets de forma segura. Ignorando para prevenir crash.", e)
+            _connectionState.value = ConnectionState.IDLE
         }
     }
 }

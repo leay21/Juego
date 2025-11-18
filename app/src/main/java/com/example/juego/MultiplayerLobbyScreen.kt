@@ -62,7 +62,11 @@ fun MultiplayerLobbyScreen(
     // Efecto para detener el escaneo cuando el usuario sale de esta pantalla
     DisposableEffect(key1 = Unit) {
         onDispose {
+            // Detenemos el escaneo y limpiamos la conexión de manera segura
             viewModel.stopDiscovery()
+            viewModel.closeConnection()
+            // La lógica de onCleared en el VM debería manejar esto, pero forzarlo aquí
+            // puede resolver el crash en la salida del composable.
         }
     }
 
@@ -72,7 +76,9 @@ fun MultiplayerLobbyScreen(
                 title = { Text("Lobby Multijugador") },
                 navigationIcon = {
                     IconButton(onClick = {
-                        viewModel.closeConnection() // Cierra todo al salir
+                        // FIX: El popBackStack debe ser lo último para evitar un crash en la navegación
+                        viewModel.stopDiscovery()
+                        viewModel.closeConnection()
                         navController.popBackStack()
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Volver")

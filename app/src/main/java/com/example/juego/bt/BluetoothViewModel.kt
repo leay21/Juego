@@ -2,35 +2,30 @@ package com.example.juego.bt
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.juego.GameMode // ¡NUEVO IMPORT!
-import kotlinx.coroutines.flow.MutableStateFlow // ¡NUEVO IMPORT!
+import com.example.juego.GameMode
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow // ¡NUEVO IMPORT!
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import android.util.Log // ¡IMPORT CORREGIDO!
 
 class BluetoothViewModel(
     private val connectionManager: BluetoothConnectionManager
 ) : ViewModel() {
 
-    // Exponer los estados del manager a la UI
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val scannedDevices: StateFlow<List<BluetoothDeviceDomain>> = connectionManager.scannedDevices
     val receivedMessages = connectionManager.receivedMessages
 
-    // --- ¡NUEVO! Estado para el modo de juego seleccionado ---
     private val _selectedGameMode = MutableStateFlow(GameMode.CLASSIC)
     val selectedGameMode: StateFlow<GameMode> = _selectedGameMode.asStateFlow()
 
     fun selectGameMode(mode: GameMode) {
         _selectedGameMode.value = mode
     }
-    // --------------------------------------------------------
 
-    // Propiedad de ayuda para la UI
     val hasBluetoothAdapter: Boolean
         get() = connectionManager.hasBluetoothAdapter
-
-    // --- Funciones que la UI puede llamar ---
 
     fun startDiscovery() {
         connectionManager.startDiscovery()
@@ -52,9 +47,6 @@ class BluetoothViewModel(
         connectionManager.closeConnection()
     }
 
-    /**
-     * Envía un mensaje Bluetooth usando el scope del ViewModel.
-     */
     fun sendMessage(message: BluetoothMessage) {
         viewModelScope.launch {
             connectionManager.sendMessage(message)
@@ -62,13 +54,18 @@ class BluetoothViewModel(
     }
 
     /**
-     * Limpia la conexión cuando el ViewModel se destruye
-     * (ej. el usuario sale de la pantalla de multijugador).
+     * ¡ULTIMA MODIFICACIÓN! Asegurar que la limpieza es fail-safe.
      */
     override fun onCleared() {
         super.onCleared()
-        // Detiene el escaneo y cierra cualquier conexión activa
-        stopDiscovery()
-        closeConnection()
+        // Envolvemos todo en un try-catch para evitar que el VM crashee la app
+        // si el SO falla al liberar el socket o el receiver.
+        try {
+            stopDiscovery()
+            closeConnection()
+        } catch (e: Exception) {
+            // Ignoramos la excepción en la limpieza final, ya que el recurso iba a morir de todas formas.
+            Log.e("BluetoothViewModel", "Error seguro al limpiar Bluetooth: ${e.message}")
+        }
     }
 }
