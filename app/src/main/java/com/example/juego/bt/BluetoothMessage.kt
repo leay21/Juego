@@ -1,20 +1,21 @@
 package com.example.juego.bt
 
 import com.example.juego.GameUiState
+import com.example.juego.GameMode
 
-// Define los mensajes que se pueden enviar por Bluetooth
-sealed class BluetoothMessage {
-
-    // Mensaje para enviar el estado completo del juego (Anfitrión -> Cliente)
-    data class GameState(val state: GameUiState) : BluetoothMessage()
-
-    // Mensaje para un evento de toque (Cliente -> Anfitrión)
-    // El anfitrión sabe que quien envía esto es el Jugador 2
-    data class PlayerTouch(val timestamp: Long = System.currentTimeMillis()) : BluetoothMessage()
-
-    // Mensaje para iniciar el juego
-    data class StartGame(val mode: com.example.juego.GameMode) : BluetoothMessage()
-
-    // Mensaje para reiniciar el juego
-    object ResetGame : BluetoothMessage()
+// 1. Definimos los tipos de mensaje posibles
+enum class MessageType {
+    GAME_STATE,
+    PLAYER_TOUCH,
+    START_GAME,
+    RESET_GAME
 }
+
+// 2. Creamos una ÚNICA clase de datos que puede llevar cualquier carga
+data class BluetoothMessage(
+    val type: MessageType,
+    // Estos campos son opcionales (null) dependiendo del tipo de mensaje
+    val gameState: GameUiState? = null,     // Para cuando el Host envía el estado
+    val touchTimestamp: Long? = null,       // Para cuando el Cliente toca la pantalla
+    val gameMode: GameMode? = null          // Por si quieres enviar el modo de juego
+)

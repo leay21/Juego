@@ -48,6 +48,7 @@ import com.example.juego.data.SaveFormat
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.navigation.NavController
+import com.example.juego.bt.MessageType
 import kotlinx.coroutines.flow.collectLatest
 
 // --- ¡FUNCIÓN UNIFICADA CON LOS 4 VIEWMODELS! ---
@@ -108,21 +109,31 @@ fun GameScreen(
     // (A) Anfitrión: Envía el estado al cliente cuando cambia
     LaunchedEffect(key1 = localUiState, key2 = isHost) {
         if (isHost) {
-            bluetoothViewModel.sendMessage(BluetoothMessage.GameState(localUiState))
+            bluetoothViewModel.sendMessage(
+                BluetoothMessage(
+                    type = MessageType.GAME_STATE,
+                    gameState = localUiState
+                )
+            )
         }
     }
 
     // (B) Cliente/Anfitrión: Escucha mensajes
     LaunchedEffect(key1 = isGameAuthority) {
         bluetoothViewModel.receivedMessages.collectLatest { message ->
-            when(message) {
-                is BluetoothMessage.GameState -> {
-                    if (isClient) { // Cliente: actualiza su UI
-                        clientUiState = message.state
+            // Usamos message.type para saber qué nos llegó
+            when(message.type) {
+                MessageType.GAME_STATE -> {
+                    if (isClient) {
+                        // Actualizamos el estado del cliente si el mensaje trae datos
+                        message.gameState?.let { serverState ->
+                            clientUiState = serverState
+                        }
                     }
                 }
-                is BluetoothMessage.PlayerTouch -> {
-                    if (isHost) { // Anfitrión: procesa el toque del cliente
+                MessageType.PLAYER_TOUCH -> {
+                    if (isHost) {
+                        // Procesamos el toque del J2
                         reflexViewModel.processTouch(2)
                     }
                 }
@@ -161,7 +172,12 @@ fun GameScreen(
         } else if (isClient) {
             // Client: solo J2 envía mensaje BT. J1 lo ignora (espera estado del Host)
             if (player == 2) {
-                bluetoothViewModel.sendMessage(BluetoothMessage.PlayerTouch())
+                bluetoothViewModel.sendMessage(
+                    BluetoothMessage(
+                        type = MessageType.PLAYER_TOUCH,
+                        touchTimestamp = System.currentTimeMillis()
+                    )
+                )
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.example.juego.bt
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -8,12 +9,15 @@ import android.bluetooth.BluetoothServerSocket
 import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
-import com.example.juego.GameUiState
+import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -22,16 +26,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.InputStream
-import java.io.OutputStream
 import java.util.UUID
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
-import android.Manifest
-import android.os.Build
-import kotlinx.coroutines.delay
 
 @SuppressLint("MissingPermission")
 class BluetoothConnectionManager(
@@ -69,8 +66,6 @@ class BluetoothConnectionManager(
         }
     }
 
-    // Se elimina la bandera isReceiverRegistered
-
     val hasBluetoothAdapter: Boolean
         get() = bluetoothAdapter != null
 
@@ -93,7 +88,6 @@ class BluetoothConnectionManager(
             return
         }
 
-        // FIX CRÍTICO: Intentar registrar el Receiver dentro de un try-catch que maneje el estado
         try {
             context.registerReceiver(
                 bluetoothStateReceiver,
@@ -101,10 +95,9 @@ class BluetoothConnectionManager(
             )
             Log.d("BTManager", "Receiver registrado.")
         } catch (e: IllegalArgumentException) {
-            // El Receiver ya estaba registrado. Esto es aceptable, simplemente lo ignoramos.
             Log.w("BTManager", "Receiver ya estaba registrado, continuando el escaneo.", e)
         } catch (e: SecurityException) {
-            Log.e("BTManager", "SecurityException al registrar receiver. No se puede escanear.", e)
+            Log.e("BTManager", "SecurityException al registrar receiver.", e)
             _connectionState.value = ConnectionState.IDLE
             return
         } catch (e: Exception) {
@@ -113,33 +106,24 @@ class BluetoothConnectionManager(
             return
         }
 
-        // El escaneo puede lanzar SecurityException, así que también lo cubrimos
         try {
             _scannedDevices.value = emptyList()
             adapter.startDiscovery()
             Log.d("BTManager", "Iniciando escaneo...")
         } catch (e: SecurityException) {
-            Log.e("BTManager", "SecurityException al iniciar escaneo. No se puede escanear.", e)
-            // Si falla aquí, debemos intentar desregistrar el receiver inmediatamente
+            Log.e("BTManager", "SecurityException al iniciar escaneo.", e)
             stopDiscoveryCleanup()
             _connectionState.value = ConnectionState.IDLE
         }
     }
 
-    /**
-     * Función separada para la limpieza y desregistro.
-     * Es llamada por stopDiscovery y también si startDiscovery falla.
-     */
     private fun stopDiscoveryCleanup() {
-        // Intentar desregistrar el receiver, capturando la excepción si no está registrado
         try {
             context.unregisterReceiver(bluetoothStateReceiver)
             Log.d("BTManager", "Receiver desregistrado exitosamente.")
         } catch (e: IllegalArgumentException) {
-            // Esto es normal si no estaba registrado. Ignoramos para prevenir el crash al salir.
-            Log.w("BTManager", "Receiver no estaba registrado al intentar desregistrar. Ignorando.", e)
+            Log.w("BTManager", "Receiver no estaba registrado al intentar desregistrar.", e)
         } catch (e: Exception) {
-            // Captura cualquier otro error de limpieza
             Log.e("BTManager", "Error al intentar desregistrar el receiver.", e)
         }
     }
@@ -162,10 +146,10 @@ class BluetoothConnectionManager(
             adapter.cancelDiscovery()
             Log.d("BTManager", "Descubrimiento cancelado.")
         } catch (e: SecurityException) {
-            Log.w("BTManager", "SecurityException al cancelar descubrimiento. Ignorando.", e)
+            Log.w("BTManager", "SecurityException al cancelar descubrimiento.", e)
         }
 
-        stopDiscoveryCleanup() // Llamamos a la función de limpieza
+        stopDiscoveryCleanup()
     }
 
     // --- Lógica de Anfitrión (Host) ---
@@ -191,10 +175,9 @@ class BluetoothConnectionManager(
         coroutineScope.launch(Dispatchers.IO) {
             try {
                 delay(200)
-
                 serverSocket = adapter.listenUsingRfcommWithServiceRecord(serviceName, serviceUUID)
-
                 Log.d("BTManager", "Servidor iniciado, esperando conexión...")
+
                 val clientSocket = serverSocket?.accept()
 
                 if (clientSocket != null) {
@@ -213,7 +196,7 @@ class BluetoothConnectionManager(
                     closeConnection()
                 }
             } catch (e: SecurityException) {
-                Log.e("BTManager", "Error de seguridad (permisos) al iniciar servidor. Intente reiniciar la app.", e)
+                Log.e("BTManager", "Error de seguridad al iniciar servidor.", e)
                 closeConnection()
             }
         }
@@ -238,9 +221,8 @@ class BluetoothConnectionManager(
             return
         }
 
-        val device = adapter.getRemoteDevice(deviceAddress)
-        if (device == null) {
-            Log.e("BTManager", "Dispositivo no encontrado con la dirección $deviceAddress")
+        val device = adapter.getRemoteDevice(deviceAddress) ?: run {
+            Log.e("BTManager", "Dispositivo no encontrado: $deviceAddress")
             return
         }
 
@@ -250,9 +232,7 @@ class BluetoothConnectionManager(
                 if(adapter.isDiscovering) {
                     stopDiscovery()
                 }
-
                 delay(200)
-
                 val socket = device.createRfcommSocketToServiceRecord(serviceUUID)
                 socket.connect()
 
@@ -262,39 +242,63 @@ class BluetoothConnectionManager(
                 Log.e("BTManager", "Error al conectar con el servidor", e)
                 closeConnection()
             } catch (e: SecurityException) {
-                Log.e("BTManager", "Error de seguridad (permisos) al conectar con el servidor", e)
+                Log.e("BTManager", "Error de seguridad al conectar.", e)
                 closeConnection()
             }
         }
     }
 
+    // [CORRECCIÓN 1]: Iniciar la escucha inmediatamente al conectar
     private fun onConnectionEstablished(socket: BluetoothSocket) {
         currentSocket = socket
         _connectionState.value = ConnectionState.CONNECTED
-        // ... (resto del código) ...
-    }
 
-    private suspend fun listenForData(inputStream: InputStream) {
-        val reader = inputStream.bufferedReader()
-        while (true) {
-            val line = reader.readLine()
-            if (line == null) {
-                Log.d("BTManager", "Stream cerrado, terminando escucha.")
-                break
-            }
-            // ... (resto del código) ...
+        // Iniciamos la corrutina de escucha y guardamos el Job
+        dataTransferJob = coroutineScope.launch(Dispatchers.IO) {
+            listenForData(socket.inputStream)
         }
     }
 
-    fun sendMessage(message: com.example.juego.bt.BluetoothMessage) {
-        val outputStream = currentSocket?.outputStream ?: run {
+    // [CORRECCIÓN 2]: Loop de lectura robusto con Gson
+    private suspend fun listenForData(inputStream: InputStream) {
+        try {
+            val reader = inputStream.bufferedReader()
+            while (true) {
+                // readLine() espera hasta encontrar un \n enviado por el otro lado
+                val line = reader.readLine() ?: break // Si es null, el socket se cerró
+
+                try {
+                    // Convertimos el JSON recibido al objeto BluetoothMessage
+                    val message = gson.fromJson(line, BluetoothMessage::class.java)
+                    _receivedMessages.emit(message)
+                } catch (e: Exception) {
+                    Log.e("BTManager", "Error procesando mensaje JSON: $line", e)
+                }
+            }
+        } catch (e: IOException) {
+            Log.e("BTManager", "Error en la conexión de datos (lectura)", e)
+        } finally {
+            // Si el loop termina, aseguramos el cierre
+            Log.d("BTManager", "Fin de escucha de datos.")
+            closeConnection()
+        }
+    }
+
+    // [CORRECCIÓN 3]: Envío con salto de línea (\n) y flush
+    fun sendMessage(message: BluetoothMessage) {
+        val socket = currentSocket ?: run {
             Log.e("BTManager", "No hay socket conectado para enviar mensaje.")
             return
         }
 
         coroutineScope.launch(Dispatchers.IO) {
             try {
-                // ... (resto del código) ...
+                val json = gson.toJson(message)
+                // IMPORTANTE: Agregar \n para que readLine() del receptor sepa que terminó el mensaje
+                val jsonWithNewline = "$json\n"
+
+                socket.outputStream.write(jsonWithNewline.toByteArray())
+                socket.outputStream.flush() // Forzar el envío inmediato
             } catch (e: IOException) {
                 Log.e("BTManager", "Error al enviar datos", e)
                 closeConnection()
@@ -306,14 +310,14 @@ class BluetoothConnectionManager(
         Log.d("BTManager", "Cerrando conexión...")
         try {
             dataTransferJob?.cancel()
-            stopDiscoveryCleanup() // Nos aseguramos de limpiar el receiver aquí también
+            stopDiscoveryCleanup()
             currentSocket?.close()
             serverSocket?.close()
             currentSocket = null
             serverSocket = null
             _connectionState.value = ConnectionState.IDLE
         } catch (e: Exception) {
-            Log.e("BTManager", "Error crítico al cerrar sockets de forma segura. Ignorando para prevenir crash.", e)
+            Log.e("BTManager", "Error al cerrar sockets.", e)
             _connectionState.value = ConnectionState.IDLE
         }
     }

@@ -64,7 +64,6 @@ fun MultiplayerLobbyScreen(
         onDispose {
             // Detenemos el escaneo y limpiamos la conexión de manera segura
             viewModel.stopDiscovery()
-            viewModel.closeConnection()
             // La lógica de onCleared en el VM debería manejar esto, pero forzarlo aquí
             // puede resolver el crash en la salida del composable.
         }
