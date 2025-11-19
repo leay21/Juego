@@ -58,16 +58,21 @@ fun GameScreen(
     settingsViewModel: SettingsViewModel,
     bluetoothViewModel: BluetoothViewModel // ¡CRÍTICO PARA BLUETOOTH!
 ) {
-    // --- 1. Determinar el Rol (Host, Client, Local) ---
+// --- 1. Determinar el Rol (Host, Client, Local) --- [BLOQUE CORREGIDO]
     val btState by bluetoothViewModel.connectionState.collectAsState()
+    val isBtHost by bluetoothViewModel.isHost.collectAsState() // Leemos el flag que creamos
 
-    // Usamos remember para capturar el rol al entrar a la pantalla
-    val isHost = remember { btState == ConnectionState.LISTENING }
-    val isClient = remember { btState == ConnectionState.CONNECTING }
-    val isLocal = !isHost && !isClient // Es Local si no es Host ni Cliente
+    // Determinamos si estamos en una partida Bluetooth activa
+    val isBluetoothGame = btState == ConnectionState.CONNECTED
+
+    // El rol se define combinando si hay conexión y qué rol guardó el ViewModel
+    val isHost = isBluetoothGame && isBtHost
+    val isClient = isBluetoothGame && !isBtHost
+    val isLocal = !isBluetoothGame // Es local solo si NO hay conexión Bluetooth
 
     // El rol determina si el juego se controla localmente
     val isGameAuthority = isLocal || isHost
+    // ---------------------------------------------------------------------
 
     // --- 2. Obtener el Estado del Juego (GameUiState) ---
     val localUiState by reflexViewModel.uiState.collectAsStateWithLifecycle()

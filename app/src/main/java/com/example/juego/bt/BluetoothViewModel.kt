@@ -19,6 +19,10 @@ class BluetoothViewModel(
 
     private val _selectedGameMode = MutableStateFlow(GameMode.CLASSIC)
     val selectedGameMode: StateFlow<GameMode> = _selectedGameMode.asStateFlow()
+    // --- [NUEVO] Flag para recordar el rol (Host vs Cliente) ---
+    private val _isHost = MutableStateFlow(false)
+    val isHost: StateFlow<Boolean> = _isHost.asStateFlow()
+    // -----------------------------------------------------------
 
     fun selectGameMode(mode: GameMode) {
         _selectedGameMode.value = mode
@@ -36,10 +40,12 @@ class BluetoothViewModel(
     }
 
     fun startServer() {
+        _isHost.value = true // [MODIFICADO] Marcamos que somos Host
         connectionManager.startServer()
     }
 
     fun connectToDevice(deviceAddress: String) {
+        _isHost.value = false // [MODIFICADO] Marcamos que somos Cliente
         connectionManager.connectToDevice(deviceAddress)
     }
 
